@@ -1093,7 +1093,7 @@ Used by bug-triage when writing a new intake file. Path: `.plans/<project>/intak
 
 ```markdown
 ---
-source: zentao | arms
+source: zentao | arms | arms-rum
 external_id: 12345 | trace-abc123
 severity: P0 | P1 | P2 | P3
 created_at: 2026-05-10T10:30:00+08:00

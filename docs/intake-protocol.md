@@ -34,7 +34,7 @@ pending ──accept──→ accepted ──dev completes MR──→ in_review
 
 ```yaml
 ---
-source: zentao | arms       # origin
+source: zentao | arms | arms-rum    # origin (arms = backend APM, arms-rum = frontend RUM)
 external_id: 12345          # external system ID
 severity: P0|P1|P2|P3       # severity
 created_at: 2026-05-10T10:30:00+08:00

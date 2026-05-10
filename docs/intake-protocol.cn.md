@@ -34,7 +34,7 @@ pending ──accept──→ accepted ──dev完成MR──→ in_review ─�
 
 ```yaml
 ---
-source: zentao | arms       # 来源
+source: zentao | arms | arms-rum    # 来源（arms = 后端 APM, arms-rum = 前端 RUM）
 external_id: 12345          # 外部系统的 ID
 severity: P0|P1|P2|P3       # 严重级
 created_at: 2026-05-10T10:30:00+08:00

@@ -186,7 +186,7 @@ team-lead is responsible for capturing user taste/style preferences:
 - **MCP Dependencies**: `zentao-mcp-server` and `mcp-server-aliyun-observability` (for ARMS)
 - **Role positioning**: Translator between the external world and CCteam — read-only on external system data, write-only to intake files, **never touches project source code**
 - **Core Responsibilities**:
-  1. **Pull ticket**: On receiving trigger (`{source: zentao|arms, id: <bug-id|trace-id>}`), call the corresponding MCP to fetch raw data
+  1. **Pull ticket**: On receiving trigger (`{source: zentao|arms|arms-rum, id: <bug-id|trace-id|rum-trace-id>}`), call the corresponding MCP to fetch raw data
   2. **Structure**: Parse raw data into a structured intake file (reproduction steps / stack trace / impact / suspected code modules / suggested priority)
   3. **Dedupe**: Before writing, grep `.plans/<project>/intake/` to check if a same-source-same-id file already exists
 - **Write permission boundaries**:

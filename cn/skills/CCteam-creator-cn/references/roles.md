@@ -186,7 +186,7 @@ team-lead 负责捕获用户的品味/风格偏好：
 - **MCP 依赖**: `zentao-mcp-server` 和 `mcp-server-aliyun-observability`（用于 ARMS）
 - **角色定位**: 外部世界 ↔ CCteam 之间的"翻译官"——只读外部系统数据、只写 intake 文件，**不碰项目源代码**
 - **核心职责**:
-  1. **拉单**: 收到 trigger（`{source: zentao|arms, id: <bug-id|trace-id>}`）后，调用对应 MCP 拉取原始数据
+  1. **拉单**: 收到 trigger（`{source: zentao|arms|arms-rum, id: <bug-id|trace-id|rum-trace-id>}`）后，调用对应 MCP 拉取原始数据
   2. **整理**: 将原始数据解析为结构化 intake 文件（重现步骤/堆栈/影响范围/相关代码模块猜测/优先级建议）
   3. **去重**: 写盘前先 grep `.plans/<project>/intake/` 看是否已存在同源同 ID 文件
 - **写权限边界**:
