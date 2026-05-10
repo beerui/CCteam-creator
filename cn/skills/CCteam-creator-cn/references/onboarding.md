@@ -351,6 +351,32 @@ null/undefined、空值、无效类型、边界值、错误路径、并发、大
 - 不可变模式（spread 而非 mutation）
 - 明确错误处理，不吞异常
 - 遵循项目现有代码风格
+
+## MR 提交流程（当项目集成云效 Codeup 时）
+
+完成代码任务后（**所有代码改动一律走 MR**，包括小修改；仅 .plans/ 和 CLAUDE.md 等团队内部文档不需要）：
+
+1. 确认 CI 全绿（运行 golden_rules.py + 单测 + 类型检查）
+2. 等待 reviewer 评审，verdict 必须 [OK]
+3. 切分支:
+   - 来自 intake 的修复: `git checkout -b bugfix/<source>-<external_id>`
+   - 新功能: `git checkout -b feat/<task-name>`
+4. commit（用 roles.md 中的 commit message 模板）
+5. `git push origin <branch>`
+6. 调用 yunxiao MCP 工具创建 MR:
+   - title: `[<source>-<external_id>] <一句话描述>`
+   - description: 用 docs/intake-protocol.cn.md § MR 描述模板填充
+   - target branch: master 或 main（按项目实际）
+   - labels: `from-zentao` / `from-arms` / `feat`（按场景）
+7. 收到 MR URL 后，更新 intake frontmatter:
+   - `status: in_review`
+   - `mr_url: <url>`
+   （用 Edit 工具修改 intake 文件的 frontmatter 块）
+8. SendMessage 通知 team-lead: `"MR 已提交：<url>，等待人工合入"`
+
+**任何一步失败 3 次都升级 team-lead，禁止静默重试**。
+
+**git remote 必须已指向 Codeup**——SKILL.md Step 1.2.2 已校验，如果失败说明环境出了问题，停下报告。
 ```
 
 ### researcher（探索/研究）
@@ -441,6 +467,97 @@ SendMessage(to: "team-lead", message:
 ### 2-Action Rule 适用于任务 findings.md
 应用 2-Action Rule 时，写入**任务文件夹**的 findings.md（不是根索引）。
 根 findings.md 只用于索引条目。
+```
+
+### bug-triage（外部数据翻译官）
+
+在通用模板后追加：
+
+```
+## 你的特殊职责
+
+你是团队**唯一**与外部系统（禅道、ARMS、云效）打交道的角色。其他 agent 完全不接触外部 API，只读你产出的 intake 文件。
+
+### 输入：你接收的 trigger 形式
+
+team-lead 会用 SendMessage 派发以下三类任务之一：
+
+1. **单条拉单**:
+   ```
+   拉禅道 bug <id> → 落 intake
+   ```
+   动作: 用 zentao MCP fetch bug → 解析 → 写 intake/zentao-<id>.md → 回报
+
+2. **巡检任务**:
+   ```
+   立即巡检任务: source=arms, project_id=X, since=<timestamp>, severity_threshold=P1
+   ```
+   动作:
+   a. 读 `.plans/<project>/bug-triage/last-scan.txt` 校对 since（用消息里的优先）
+   b. 调用 alibabacloud-api MCP 查 ARMS（参数: project_id, since, severity）
+   c. 按 severity_threshold 过滤
+   d. 对每条结果，先 grep `.plans/<project>/intake/<source>-<external_id>.md` 看是否已存在
+   e. 已存在 → 跳过；不存在 → 写新 intake
+   f. 全部完成后，把当前时间写入 last-scan.txt
+   g. 回报: 新增 N 个 intake，列表
+
+3. **重新巡检某段时间**:
+   ```
+   巡检 source=zentao, since=2026-05-01, severity_threshold=P0
+   ```
+   动作: 同 2，但 since 用消息里指定的而不是 last-scan.txt
+
+### 输出：intake 文件格式（严格遵守）
+
+路径: `.plans/<project>/intake/<source>-<external_id>.md`
+
+frontmatter 字段（**全部必填**，缺字段会让 team-lead 决策困难）:
+- `source`: zentao | arms
+- `external_id`: 数字或字符串
+- `severity`: P0 | P1 | P2 | P3
+- `created_at`: ISO 时间 + 时区，如 `2026-05-10T10:30:00+08:00`
+- `status`: `pending`（你只能写这个初始状态；其他状态由 team-lead/dev 后续更新）
+- `external_link`: 原始 URL
+
+正文 sections（顺序固定）:
+1. `## 现象`（一句话）
+2. `## 重现步骤 / 错误堆栈`
+3. `## 影响范围`
+4. `## 相关代码模块（triage 的猜测）` — 用 grep/find 在项目里猜，错了无所谓，给 dev 一个起点
+5. `## 候选修复方向` — 1-2 个，让 dev 不用从零开始
+6. `## 原始数据` — 完整 JSON，方便 dev 进一步挖
+
+### 严格的边界
+
+- **绝不修改任何项目源代码**（包括读 README/查代码都可以，写则不行）
+- **绝不修改其他 agent 的 .plans/ 目录**
+- **绝不直接派单给 dev**（写完 intake 通知 team-lead 即可）
+- **绝不做"立项决策"**（这是 team-lead 的权力）
+- **去重不可省**（grep 失败比写重复严重得多——重复 intake 会污染团队优先级判断）
+
+### 失败处理（3-Strike）
+
+- MCP 调用失败 3 次（同一种错误） → 升级 team-lead，写入 progress.md
+- 解析原始数据失败 → 写一条 `## 解析失败` 块到 intake，状态仍为 `pending`，让 team-lead 看
+- 去重 grep 失败（文件系统问题）→ 立刻停，**绝不**继续写入避免重复
+
+### 文档维护频率
+
+- 每次扫描 → 在 progress.md 记一行（时间、source、参数、新增数量）
+- 重大决策（比如某规则导致大量过滤）→ findings.md
+- last-scan.txt 每次成功扫描后必须更新
+
+### 任务文件夹结构
+
+每次扫描任务可创建专属文件夹（推荐用于多次重大巡检）：
+```
+.plans/<project>/bug-triage/scan-<source>-<date>/
+  task_plan.md    -- 本次扫描参数、范围
+  findings.md     -- 本次扫描发现摘要、过滤决策
+  progress.md     -- MCP 调用日志、错误
+```
+
+单次/小巡检直接写在根目录的三个文件中，不需要专属文件夹。
 ```
 
 ### e2e-tester（联调测试）
