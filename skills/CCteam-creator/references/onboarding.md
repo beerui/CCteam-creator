@@ -478,28 +478,31 @@ team-lead dispatches one of three task types via SendMessage:
 2. **Scan task**:
    ```
    Immediate scan task: source=arms, project_id=X, since=<timestamp>, severity_threshold=P1
+   Immediate scan task: source=arms-rum, rum_app_id=Y, since=<timestamp>, severity_threshold=P1
    ```
    Actions:
-   a. Read `.plans/<project>/bug-triage/last-scan.txt` to verify since (message value takes priority)
-   b. Call alibabacloud-api MCP to query ARMS (params: project_id, since, severity)
+   a. Read `.plans/<project>/bug-triage/last-scan-<source>.txt` to verify since (each source maintains its own cursor — backend ARMS and frontend RUM cursors must NOT cross-contaminate; message value takes priority)
+   b. Pick the MCP per source (see mcp-setup.md):
+      - `source=arms` → `aliyun-observability` MCP (uvx-launched), call ARMS backend APM APIs (list error events etc.) with params project_id + since + severity
+      - `source=arms-rum` → the `arms-rum` Streamable HTTP MCP (configured via Aliyun OpenAPI Explorer), call `SearchRumExceptions` with rum_app_id + since + severity for frontend JS exceptions
    c. Filter by severity_threshold
    d. For each result, grep `.plans/<project>/intake/<source>-<external_id>.md` to check existence
    e. If exists → skip; otherwise → write new intake
-   f. After all done, write current time to last-scan.txt
+   f. After all done, write current time to `last-scan-<source>.txt`
    g. Report: N new intakes added, list
 
 3. **Replay scan over a time range**:
    ```
    Scan source=zentao, since=2026-05-01, severity_threshold=P0
    ```
-   Action: same as 2, but use the since from the message instead of last-scan.txt
+   Action: same as 2, but use the since from the message instead of last-scan-<source>.txt
 
 ### Output: Intake File Format (Strictly Adhered To)
 
 Path: `.plans/<project>/intake/<source>-<external_id>.md`
 
 frontmatter fields (**all required**, missing fields make team-lead's decision difficult):
-- `source`: zentao | arms
+- `source`: zentao | arms | arms-rum
 - `external_id`: number or string
 - `severity`: P0 | P1 | P2 | P3
 - `created_at`: ISO time + timezone, e.g. `2026-05-10T10:30:00+08:00`
@@ -532,7 +535,7 @@ Body sections (fixed order):
 
 - Each scan → log one line in progress.md (time, source, params, count of new intakes)
 - Major decisions (e.g. a rule causing heavy filtering) → findings.md
-- last-scan.txt must be updated after every successful scan
+- last-scan-<source>.txt must be updated after every successful scan (each source has its own file to prevent cursor cross-contamination)
 
 ### Task Folder Structure
 

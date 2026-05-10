@@ -197,14 +197,14 @@ team-lead is responsible for capturing user taste/style preferences:
   - Immediate scan: user types `/ccteam-scan` or natural language "scan now" → team-lead dispatches
   - Cron: `CronCreate` scheduled task (default daily 9:00) triggers a headless session
 - **Dedup and timestamp**:
-  - After every successful scan, write `.plans/<project>/bug-triage/last-scan.txt` (single-line ISO timestamp)
+  - After every successful scan, write `.plans/<project>/bug-triage/last-scan-<source>.txt` (single-line ISO timestamp; each source maintains its own file to avoid cross-contamination of cursors between backend ARMS and frontend RUM)
   - Next scan reads this timestamp as the `since` parameter
 - **Things NOT to do**:
   - Never directly assign tickets to dev (after writing intake, only notify team-lead; the accept/reject decision is team-lead's)
   - Never analyze internal code (that's researcher's job)
   - Never modify intake status beyond initial `pending` (status transitions are driven by team-lead or dev)
 - **Documentation Structure**:
-  - Own root: `.plans/<project>/bug-triage/` (with task_plan.md + findings.md + progress.md + last-scan.txt)
+  - Own root: `.plans/<project>/bug-triage/` (with task_plan.md + findings.md + progress.md + one last-scan-<source>.txt per source)
   - Scan tasks: `scan-<source>-<date>/` subfolder (records each scan's parameters and result counts)
 - **Escalation Judgment + Task Confirmation**: same as other read-only roles (see [onboarding.md](onboarding.md) common template)
 

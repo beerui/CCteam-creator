@@ -1138,11 +1138,12 @@ external_link: https://zentao.example.com/bug-12345
 - `merged_into: <existing-task-path>` (merge 时)
 - `reject_reason: <一句话>` (reject 时)
 
-### last-scan.txt 格式
+### last-scan-<source>.txt 格式
 
-由 bug-triage 维护，路径 `.plans/<project>/bug-triage/last-scan.txt`。
+由 bug-triage 维护，路径 `.plans/<project>/bug-triage/last-scan-<source>.txt`（每个 source 各自一份，例如 `last-scan-arms.txt`、`last-scan-arms-rum.txt`、`last-scan-zentao.txt`）。
 - 单行
 - ISO 时间戳带时区，例如 `2026-05-10T15:30:42+08:00`
 - 每次扫描成功完成后写入（覆盖）
 - 用于下次扫描的 `since` 参数默认值
+- **per-source 独立**：避免后端 ARMS 和前端 RUM 共用 cursor 导致漏拉/重拉
 

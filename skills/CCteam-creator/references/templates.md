@@ -1131,11 +1131,12 @@ When state evolves from pending, team-lead/dev appends to frontmatter:
 - `merged_into: <existing-task-path>` (on merge)
 - `reject_reason: <one-liner>` (on reject)
 
-### last-scan.txt format
+### last-scan-<source>.txt format
 
-Maintained by bug-triage. Path: `.plans/<project>/bug-triage/last-scan.txt`.
+Maintained by bug-triage. Path: `.plans/<project>/bug-triage/last-scan-<source>.txt` (one file per source, e.g. `last-scan-arms.txt`, `last-scan-arms-rum.txt`, `last-scan-zentao.txt`).
 - Single line
 - ISO timestamp with timezone, e.g. `2026-05-10T15:30:42+08:00`
 - Overwritten after every successful scan
 - Used as the default `since` parameter for the next scan
+- **Per-source isolation**: prevents cursor cross-contamination between backend ARMS and frontend RUM (which would cause missed or duplicate intakes).
 

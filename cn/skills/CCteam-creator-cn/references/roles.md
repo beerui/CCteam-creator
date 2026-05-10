@@ -197,14 +197,14 @@ team-lead 负责捕获用户的品味/风格偏好：
   - 立即巡检: 用户敲 `/ccteam-scan` 或自然语言"立即巡检" → team-lead 派发
   - Cron: `CronCreate` 定时任务（默认每天 9:00）触发 headless 会话执行
 - **去重与时间戳**:
-  - 每次扫描完成后写入 `.plans/<project>/bug-triage/last-scan.txt`（单行 ISO 时间戳）
+  - 每次扫描完成后写入 `.plans/<project>/bug-triage/last-scan-<source>.txt`（单行 ISO 时间戳；每个 source 各自一份，避免后端 ARMS / 前端 RUM cursor 串扰）
   - 下次扫描读取此时间戳作为 `since` 参数
 - **不做的事**:
   - 不直接立项（intake 写完只通知 team-lead，立项决策由 team-lead 做）
   - 不分析代码仓库内部（那是 researcher 的工作）
   - 不修改 intake 状态（除从无到 `pending`），状态流转由 team-lead 或 dev 触发
 - **文档结构**:
-  - 自己的根目录: `.plans/<project>/bug-triage/`（含 task_plan.md + findings.md + progress.md + last-scan.txt）
+  - 自己的根目录: `.plans/<project>/bug-triage/`（含 task_plan.md + findings.md + progress.md + 每个 source 一份 last-scan-<source>.txt）
   - 巡检任务: `scan-<source>-<date>/` 子文件夹（记录每次扫描参数、结果统计）
 - **升级判断 + 任务确认**: 同其他只读角色（参见 [onboarding.md](onboarding.md) 通用模板）
 

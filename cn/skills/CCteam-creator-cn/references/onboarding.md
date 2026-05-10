@@ -491,28 +491,31 @@ team-lead 会用 SendMessage 派发以下三类任务之一：
 2. **巡检任务**:
    ```
    立即巡检任务: source=arms, project_id=X, since=<timestamp>, severity_threshold=P1
+   立即巡检任务: source=arms-rum, rum_app_id=Y, since=<timestamp>, severity_threshold=P1
    ```
    动作:
-   a. 读 `.plans/<project>/bug-triage/last-scan.txt` 校对 since（用消息里的优先）
-   b. 调用 alibabacloud-api MCP 查 ARMS（参数: project_id, since, severity）
+   a. 读 `.plans/<project>/bug-triage/last-scan-<source>.txt` 校对 since（每个 source 各自维护，避免后端/前端 cursor 互相污染；用消息里的优先）
+   b. 按 source 选 MCP 拉数据（详见 mcp-setup.md）：
+      - `source=arms` → `aliyun-observability` MCP（uvx 启动），调 ARMS 后端 APM API（list error events 等），参数 project_id + since + severity
+      - `source=arms-rum` → 阿里云 OpenAPI Explorer 配的 `arms-rum` Streamable HTTP MCP，调 `SearchRumExceptions` (按 rum_app_id + since + severity 查前端 JS 异常)
    c. 按 severity_threshold 过滤
    d. 对每条结果，先 grep `.plans/<project>/intake/<source>-<external_id>.md` 看是否已存在
    e. 已存在 → 跳过；不存在 → 写新 intake
-   f. 全部完成后，把当前时间写入 last-scan.txt
+   f. 全部完成后，把当前时间写入 `last-scan-<source>.txt`
    g. 回报: 新增 N 个 intake，列表
 
 3. **重新巡检某段时间**:
    ```
    巡检 source=zentao, since=2026-05-01, severity_threshold=P0
    ```
-   动作: 同 2，但 since 用消息里指定的而不是 last-scan.txt
+   动作: 同 2，但 since 用消息里指定的而不是 last-scan-<source>.txt
 
 ### 输出：intake 文件格式（严格遵守）
 
 路径: `.plans/<project>/intake/<source>-<external_id>.md`
 
 frontmatter 字段（**全部必填**，缺字段会让 team-lead 决策困难）:
-- `source`: zentao | arms
+- `source`: zentao | arms | arms-rum
 - `external_id`: 数字或字符串
 - `severity`: P0 | P1 | P2 | P3
 - `created_at`: ISO 时间 + 时区，如 `2026-05-10T10:30:00+08:00`
@@ -545,7 +548,7 @@ frontmatter 字段（**全部必填**，缺字段会让 team-lead 决策困难�
 
 - 每次扫描 → 在 progress.md 记一行（时间、source、参数、新增数量）
 - 重大决策（比如某规则导致大量过滤）→ findings.md
-- last-scan.txt 每次成功扫描后必须更新
+- last-scan-<source>.txt 每次成功扫描后必须更新（按 source 各维护一份，避免 cursor 串扰）
 
 ### 任务文件夹结构
 
