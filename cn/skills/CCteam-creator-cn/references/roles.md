@@ -64,6 +64,36 @@ team-lead 负责捕获用户的品味/风格偏好：
   - 不可变模式（spread，不 mutate）
   - 明确错误处理，不吞异常
 - **升级判断 + 任务确认**：见 [onboarding.md](onboarding.md) 通用模板的"团队沟通"和"升级判断"章节。所有角色共用同一套双向沟通协议：收到任务先一句话确认、完成带证据、任务间 checkpoint、遇到模糊先问再做。
+- **MR Submission Protocol**（接入云效 Codeup 时）:
+  完成代码后，按以下顺序提交 MR：
+  1. 跑 CI（golden_rules.py + tests）→ 必须全绿
+  2. 等待 reviewer 内部评审 → 必须 [OK]（[WARN] 或 [BLOCK] 都不能提）
+  3. `git checkout -b bugfix/<source>-<external-id>`（来自 intake）或 `feat/<task-name>`（新功能）
+  4. `git add` + `git commit`，commit message 模板见下
+  5. `git push origin <branch>`
+  6. 调用 yunxiao MCP 创建 MR，字段见 docs/intake-protocol.cn.md § MR 描述模板
+  7. 把 MR URL 写回 intake 文件 frontmatter（`status: in_review`, `mr_url: <url>`）
+  8. 通知 team-lead："MR 已提交，等待人工合入：<url>"
+
+  **Commit message 模板**:
+  ```
+  fix(<module>): <一句话描述>
+
+  关联: <source>-<external-id>
+  原因: <root cause 一行>
+  方案: <fix approach 一行>
+
+  Internal-Review: PASS (.plans/<project>/reviewer/review-<task>/findings.md)
+  CI: PASS
+
+  Co-Authored-By: Claude (CCteam) <noreply@anthropic.com>
+  ```
+
+  **适用范围**: 来自 intake 的 bug 修复 / 新功能 / 小修改（如 typo / log 等级调整）**一律走 MR**。仅 `.plans/`、CLAUDE.md 等团队内部文档不需要 MR。
+
+  **失败处理**: git push 失败、MR 创建失败、CI 不绿——三者都按 3-Strike 协议升级 team-lead，**不静默重试**。
+
+  **依赖**: 项目目录已 `git remote add origin https://codeup.aliyun.com/...`，且 `YUNXIAO_ACCESS_TOKEN` 已配。SKILL.md Step 1.2.2 会校验。
 
 ---
 
@@ -87,6 +117,36 @@ team-lead 负责捕获用户的品味/风格偏好：
   - 无障碍（ARIA 标签）
   - Bundle 大小
 - **升级判断 + 任务确认**：见 [onboarding.md](onboarding.md) 通用模板（与 backend-dev 相同）
+- **MR Submission Protocol**（接入云效 Codeup 时）:
+  完成代码后，按以下顺序提交 MR：
+  1. 跑 CI（golden_rules.py + tests）→ 必须全绿
+  2. 等待 reviewer 内部评审 → 必须 [OK]（[WARN] 或 [BLOCK] 都不能提）
+  3. `git checkout -b bugfix/<source>-<external-id>`（来自 intake）或 `feat/<task-name>`（新功能）
+  4. `git add` + `git commit`，commit message 模板见下
+  5. `git push origin <branch>`
+  6. 调用 yunxiao MCP 创建 MR，字段见 docs/intake-protocol.cn.md § MR 描述模板
+  7. 把 MR URL 写回 intake 文件 frontmatter（`status: in_review`, `mr_url: <url>`）
+  8. 通知 team-lead："MR 已提交，等待人工合入：<url>"
+
+  **Commit message 模板**:
+  ```
+  fix(<module>): <一句话描述>
+
+  关联: <source>-<external-id>
+  原因: <root cause 一行>
+  方案: <fix approach 一行>
+
+  Internal-Review: PASS (.plans/<project>/reviewer/review-<task>/findings.md)
+  CI: PASS
+
+  Co-Authored-By: Claude (CCteam) <noreply@anthropic.com>
+  ```
+
+  **适用范围**: 来自 intake 的 bug 修复 / 新功能 / 小修改（如 typo / log 等级调整）**一律走 MR**。仅 `.plans/`、CLAUDE.md 等团队内部文档不需要 MR。
+
+  **失败处理**: git push 失败、MR 创建失败、CI 不绿——三者都按 3-Strike 协议升级 team-lead，**不静默重试**。
+
+  **依赖**: 项目目录已 `git remote add origin https://codeup.aliyun.com/...`，且 `YUNXIAO_ACCESS_TOKEN` 已配。SKILL.md Step 1.2.2 会校验。
 
 ---
 
@@ -115,6 +175,38 @@ team-lead 负责捕获用户的品味/风格偏好：
   - findings.md 是每个调研任务的**核心交付物**——其他人读此文件获取结论
   - 根 findings.md 作为**索引**，链接到各调研报告
   - 临时性的零散观察 → 直接记录在根 findings.md 中
+
+---
+
+### Bug Triage (bug-triage)
+
+- **名称**: `bug-triage`
+- **subagent_type**: `general-purpose`
+- **model**: `sonnet`
+- **MCP 依赖**: `zentao-mcp` 和 `alibabacloud-api-mcp-server`（用于 ARMS）
+- **角色定位**: 外部世界 ↔ CCteam 之间的"翻译官"——只读外部系统数据、只写 intake 文件，**不碰项目源代码**
+- **核心职责**:
+  1. **拉单**: 收到 trigger（`{source: zentao|arms, id: <bug-id|trace-id>}`）后，调用对应 MCP 拉取原始数据
+  2. **整理**: 将原始数据解析为结构化 intake 文件（重现步骤/堆栈/影响范围/相关代码模块猜测/优先级建议）
+  3. **去重**: 写盘前先 grep `.plans/<project>/intake/` 看是否已存在同源同 ID 文件
+- **写权限边界**:
+  - **可写**: `.plans/<project>/bug-triage/` 和 `.plans/<project>/intake/`
+  - **不可写**: 项目源代码、其他 agent 的 .plans/ 目录
+- **触发链路**（详见 SKILL.md 的 Intake Processing Protocol 章节）:
+  - 手动: 用户在主对话说"处理禅道 12345" → team-lead 用 SendMessage 派发
+  - 立即巡检: 用户敲 `/ccteam-scan` 或自然语言"立即巡检" → team-lead 派发
+  - Cron: `CronCreate` 定时任务（默认每天 9:00）触发 headless 会话执行
+- **去重与时间戳**:
+  - 每次扫描完成后写入 `.plans/<project>/bug-triage/last-scan.txt`（单行 ISO 时间戳）
+  - 下次扫描读取此时间戳作为 `since` 参数
+- **不做的事**:
+  - 不直接立项（intake 写完只通知 team-lead，立项决策由 team-lead 做）
+  - 不分析代码仓库内部（那是 researcher 的工作）
+  - 不修改 intake 状态（除从无到 `pending`），状态流转由 team-lead 或 dev 触发
+- **文档结构**:
+  - 自己的根目录: `.plans/<project>/bug-triage/`（含 task_plan.md + findings.md + progress.md + last-scan.txt）
+  - 巡检任务: `scan-<source>-<date>/` 子文件夹（记录每次扫描参数、结果统计）
+- **升级判断 + 任务确认**: 同其他只读角色（参见 [onboarding.md](onboarding.md) 通用模板）
 
 ---
 
