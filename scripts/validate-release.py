@@ -3,7 +3,8 @@
 validate-release.py -- Pre-push release validation for CCteam-creator.
 
 Run from repo root:
-    python scripts/validate-release.py
+    python scripts/validate-release.py                # core checks (offline, fast)
+    python scripts/validate-release.py --check-deps   # also verify npm/PyPI package reachability
 
 Exits 0 if all checks pass, 1 on any error.
 Prints warnings but does not fail on them.
@@ -15,9 +16,12 @@ Checks performed:
   3. Three-name alignment: plugin.json name == skill directory name == SKILL.md frontmatter name
      (for both EN and CN variants)
   4. EN/CN parallel file structure
+  5. (--check-deps only) MCP packages referenced in mcp-setup.md actually exist
+     on npm registry / PyPI — catches "phantom dependency" docs that 404 on user install.
 """
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -206,11 +210,89 @@ def check_parallel_structure():
         ok(f"EN and CN have identical file structure ({len(en_files)} files each)")
 
 
+def check_external_deps():
+    """(Optional, --check-deps) Verify MCP packages in mcp-setup.md exist on npm/PyPI.
+
+    Catches the "phantom dependency" failure mode where docs reference packages
+    that 404 on user install. Skipped by default since it requires network calls.
+    Uses system `curl` (not urllib) to avoid macOS Python SSL cert issues.
+    """
+    if "--check-deps" not in sys.argv:
+        return
+
+    print("\n=== Check 5: External MCP dependency reachability ===")
+
+    npm_packages = set()
+    pypi_packages = set()
+
+    mcp_setup_files = [
+        REPO_ROOT / "skills" / "CCteam-creator" / "references" / "mcp-setup.md",
+        REPO_ROOT / "cn" / "skills" / "CCteam-creator-cn" / "references" / "mcp-setup.md",
+    ]
+    for path in mcp_setup_files:
+        if not path.exists():
+            warn(f"{path.relative_to(REPO_ROOT)}: not found, skip")
+            continue
+        text = path.read_text(encoding="utf-8")
+        # npx pattern: "args": [..., "-y", "<pkg>", ...]
+        for m in re.finditer(r'"-y"\s*,\s*"([^"]+)"', text):
+            npm_packages.add(m.group(1))
+        # uvx (PyPI) pattern: "command": "uvx", "args": ["<pkg>", ...]
+        for m in re.finditer(r'"command":\s*"uvx",\s*"args":\s*\[\s*"([^"]+)"', text):
+            pypi_packages.add(m.group(1))
+
+    if not npm_packages and not pypi_packages:
+        warn("No MCP package references found in mcp-setup.md — skip dep check")
+        return
+
+    def fetch_with_status(url, timeout=8):
+        """Returns (body, http_code) tuple. body=None on non-2xx or transport failure."""
+        try:
+            result = subprocess.run(
+                ["curl", "-s", "-m", str(timeout), "-w", "\n%{http_code}", url],
+                capture_output=True, text=True, check=False,
+            )
+        except FileNotFoundError:
+            return None, "curl-not-found"
+        if result.returncode != 0:
+            return None, f"curl-exit-{result.returncode}"
+        body, _, http_code = result.stdout.rpartition("\n")
+        return body, http_code
+
+    for pkg in sorted(npm_packages):
+        body, code = fetch_with_status(f"https://registry.npmjs.org/{pkg}")
+        if code == "200" and body:
+            try:
+                ver = json.loads(body).get("dist-tags", {}).get("latest", "?")
+                ok(f"npm '{pkg}' v{ver}")
+            except Exception as e:
+                warn(f"npm '{pkg}': returned 200 but body unparseable — {e}")
+        elif code == "404":
+            fail(f"npm '{pkg}': 404 — package does not exist on npm registry")
+        else:
+            warn(f"npm '{pkg}': {code} (network or registry issue?)")
+
+    for pkg in sorted(pypi_packages):
+        body, code = fetch_with_status(f"https://pypi.org/pypi/{pkg}/json")
+        if code == "200" and body:
+            try:
+                ver = json.loads(body)["info"]["version"]
+                ok(f"pypi '{pkg}' v{ver}")
+            except Exception as e:
+                warn(f"pypi '{pkg}': returned 200 but body unparseable — {e}")
+        elif code == "404":
+            fail(f"pypi '{pkg}': 404 — package does not exist on PyPI")
+        else:
+            warn(f"pypi '{pkg}': {code} (network or registry issue?)")
+
+
 def main():
     print("=" * 60)
     print("CCteam-creator pre-release validation")
     print("=" * 60)
     print(f"Repo root: {REPO_ROOT}")
+    if "--check-deps" not in sys.argv:
+        print("(use --check-deps to also verify npm/PyPI package reachability)")
 
     check_versions()
     check_skill_variant(
@@ -226,6 +308,7 @@ def main():
         "CCteam-creator-cn",
     )
     check_parallel_structure()
+    check_external_deps()
 
     print("\n" + "=" * 60)
     if errors:
