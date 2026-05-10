@@ -64,6 +64,36 @@ team-lead is responsible for capturing user taste/style preferences:
   - Immutable patterns (spread, no mutation)
   - Explicit error handling, no swallowed exceptions
 - **Escalation Judgment + Task Confirmation**: see the "Team Communication" and "Escalation Judgment" sections in the [onboarding.md](onboarding.md) common template. All roles share the same bidirectional communication protocol: confirm receipt of any new task with a one-liner, report completions with evidence, checkpoint between tasks, and ask before proceeding on ambiguity.
+- **MR Submission Protocol** (when integrated with Yunxiao Codeup):
+  After completing code changes, submit MR in this order:
+  1. Run CI (golden_rules.py + tests) → must be all green
+  2. Wait for reviewer's internal review → must be [OK] (cannot submit on [WARN] or [BLOCK])
+  3. `git checkout -b bugfix/<source>-<external-id>` (from intake) or `feat/<task-name>` (new feature)
+  4. `git add` + `git commit`, commit message template below
+  5. `git push origin <branch>`
+  6. Call yunxiao MCP to create the MR; field details in docs/intake-protocol.md § MR description template
+  7. Write the MR URL back to the intake file frontmatter (`status: in_review`, `mr_url: <url>`)
+  8. Notify team-lead: "MR submitted, awaiting human merge: <url>"
+
+  **Commit message template**:
+  ```
+  fix(<module>): <one-line description>
+
+  Related: <source>-<external-id>
+  Cause: <root cause one line>
+  Solution: <fix approach one line>
+
+  Internal-Review: PASS (.plans/<project>/reviewer/review-<task>/findings.md)
+  CI: PASS
+
+  Co-Authored-By: Claude (CCteam) <noreply@anthropic.com>
+  ```
+
+  **Scope of application**: bug fixes from intake / new features / small changes (typo, log level adjustment) **all go through MR**. Only `.plans/`, CLAUDE.md and other team-internal docs do not need an MR.
+
+  **Failure handling**: git push failure, MR creation failure, CI not green — all three escalate to team-lead per the 3-Strike protocol, **never silent retry**.
+
+  **Dependencies**: Project directory has `git remote add origin https://codeup.aliyun.com/...` configured, and `YUNXIAO_ACCESS_TOKEN` is set. SKILL.md Step 1.2.2 will validate.
 
 ---
 
@@ -87,6 +117,36 @@ team-lead is responsible for capturing user taste/style preferences:
   - Accessibility (ARIA labels)
   - Bundle size
 - **Escalation Judgment + Task Confirmation**: see [onboarding.md](onboarding.md) common template (same as backend-dev)
+- **MR Submission Protocol** (when integrated with Yunxiao Codeup):
+  After completing code changes, submit MR in this order:
+  1. Run CI (golden_rules.py + tests) → must be all green
+  2. Wait for reviewer's internal review → must be [OK] (cannot submit on [WARN] or [BLOCK])
+  3. `git checkout -b bugfix/<source>-<external-id>` (from intake) or `feat/<task-name>` (new feature)
+  4. `git add` + `git commit`, commit message template below
+  5. `git push origin <branch>`
+  6. Call yunxiao MCP to create the MR; field details in docs/intake-protocol.md § MR description template
+  7. Write the MR URL back to the intake file frontmatter (`status: in_review`, `mr_url: <url>`)
+  8. Notify team-lead: "MR submitted, awaiting human merge: <url>"
+
+  **Commit message template**:
+  ```
+  fix(<module>): <one-line description>
+
+  Related: <source>-<external-id>
+  Cause: <root cause one line>
+  Solution: <fix approach one line>
+
+  Internal-Review: PASS (.plans/<project>/reviewer/review-<task>/findings.md)
+  CI: PASS
+
+  Co-Authored-By: Claude (CCteam) <noreply@anthropic.com>
+  ```
+
+  **Scope of application**: bug fixes from intake / new features / small changes (typo, log level adjustment) **all go through MR**. Only `.plans/`, CLAUDE.md and other team-internal docs do not need an MR.
+
+  **Failure handling**: git push failure, MR creation failure, CI not green — all three escalate to team-lead per the 3-Strike protocol, **never silent retry**.
+
+  **Dependencies**: Project directory has `git remote add origin https://codeup.aliyun.com/...` configured, and `YUNXIAO_ACCESS_TOKEN` is set. SKILL.md Step 1.2.2 will validate.
 
 ---
 
@@ -115,6 +175,38 @@ team-lead is responsible for capturing user taste/style preferences:
   - findings.md is the **main deliverable** of each research task — others read this to get the conclusions
   - Root findings.md serves as an **index** linking to each research report
   - Quick one-off observations → recorded in root findings.md directly
+
+---
+
+### Bug Triage (bug-triage)
+
+- **Name**: `bug-triage`
+- **subagent_type**: `general-purpose`
+- **model**: `sonnet`
+- **MCP Dependencies**: `zentao-mcp` and `alibabacloud-api-mcp-server` (for ARMS)
+- **Role positioning**: Translator between the external world and CCteam — read-only on external system data, write-only to intake files, **never touches project source code**
+- **Core Responsibilities**:
+  1. **Pull ticket**: On receiving trigger (`{source: zentao|arms, id: <bug-id|trace-id>}`), call the corresponding MCP to fetch raw data
+  2. **Structure**: Parse raw data into a structured intake file (reproduction steps / stack trace / impact / suspected code modules / suggested priority)
+  3. **Dedupe**: Before writing, grep `.plans/<project>/intake/` to check if a same-source-same-id file already exists
+- **Write permission boundaries**:
+  - **Can write**: `.plans/<project>/bug-triage/` and `.plans/<project>/intake/`
+  - **Cannot write**: project source code, other agents' .plans/ directories
+- **Trigger paths** (see SKILL.md § Intake Processing Protocol for details):
+  - Manual: user says in main chat "process zentao 12345" → team-lead dispatches via SendMessage
+  - Immediate scan: user types `/ccteam-scan` or natural language "scan now" → team-lead dispatches
+  - Cron: `CronCreate` scheduled task (default daily 9:00) triggers a headless session
+- **Dedup and timestamp**:
+  - After every successful scan, write `.plans/<project>/bug-triage/last-scan.txt` (single-line ISO timestamp)
+  - Next scan reads this timestamp as the `since` parameter
+- **Things NOT to do**:
+  - Never directly assign tickets to dev (after writing intake, only notify team-lead; the accept/reject decision is team-lead's)
+  - Never analyze internal code (that's researcher's job)
+  - Never modify intake status beyond initial `pending` (status transitions are driven by team-lead or dev)
+- **Documentation Structure**:
+  - Own root: `.plans/<project>/bug-triage/` (with task_plan.md + findings.md + progress.md + last-scan.txt)
+  - Scan tasks: `scan-<source>-<date>/` subfolder (records each scan's parameters and result counts)
+- **Escalation Judgment + Task Confirmation**: same as other read-only roles (see [onboarding.md](onboarding.md) common template)
 
 ---
 
