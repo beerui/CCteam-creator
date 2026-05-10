@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## 0.1.2 - 2026-05-11
+
+> Patch: Step 0 fallback regression fix + manual install completeness + ARMS RUM source.
+> Patch：Step 0 fallback 回归修复 + 手动安装完整性 + ARMS RUM source 接入。
+
+### Fixed / 修复
+- **Step 0 Update Check fallback chain regression** (introduced in 0.1.1):
+  Previous `ls ... | head -1 | xargs cat 2>/dev/null || ...` silently exits 0 when files are missing, never falling through. Replaced with a single `ls -t` over all 4 candidate paths + `[ -n "$PJ" ] && cat "$PJ"` guard. Verified against both real-machine multi-version cache and fresh smoke-install layouts.
+  Step 0 Update Check fallback 链回归修复（0.1.1 引入）：原命令在文件缺失时静默 exit 0 永不 fall through；改为单条 ls -t 跨所有候选路径选最新 + [ -n ] 守卫，多版本缓存和新装两种环境均验证通过。
+- **README manual install missed `.claude-plugin/` copy**:
+  `cp -r skills/CCteam-creator ~/.claude/skills/...` only carries SKILL.md + references/ + scripts/ — `plugin.json` lives at repo root, not in the skill dir. Result: manual-install users had no version metadata, Step 0 silently skipped despite README line 223 promising notification. Added second `cp -r .claude-plugin ~/.claude/skills/<name>/` for both EN and CN install paths, plus a callout explaining why.
+  README 手动安装漏复制 `.claude-plugin/` 目录：手动安装用户拿不到 version 元数据，Step 0 静默跳过；新增第 2 行 cp 命令并加说明。
+
+### Added / 新增
+- **`source: arms-rum`** added to bug-triage source enum (frontend RUM exception triage):
+  - `roles.md` / `templates.md` / `intake-protocol.md(.cn)`: enum extended `zentao | arms` → `zentao | arms | arms-rum`
+  - `commands/ccteam-scan.md` rewritten: accepts 3 sources with explicit MCP mapping table (arms→`mcp-server-aliyun-observability` uvx; arms-rum→OpenAPI Explorer streamable-http; zentao→`zentao-mcp-server` npm); per-source last-scan tracking via `last-scan-<source>.txt` to avoid cross-contamination of `since` cursors between backend ARMS and frontend RUM
+  
+  bug-triage source 枚举加 arms-rum；/ccteam-scan 命令重写支持 3 个 source 及其各自 MCP 映射，per-source last-scan 追踪。
+
+### Notes / 备注
+- This release pairs with 0.1.1's mcp-setup.md § 3.4 (Aliyun OpenAPI Explorer Streamable HTTP for ARMS RUM) — together they complete the frontend RUM integration story end-to-end (config + trigger).
+  本版本配合 0.1.1 的 mcp-setup.md § 3.4——两版合起来端到端打通前端 RUM 集成（配置 + 触发）。
+- Backward compatible: existing intake files with `source: arms` continue to work; the enum just gained a third valid value.
+  向后兼容：已有 `source: arms` intake 文件继续工作，枚举只是多了第 3 个合法值。
+
 ## 0.1.1 - 2026-05-11
 
 > Patch release: user-blocking MCP package names + doc/config gaps. No breaking changes.
