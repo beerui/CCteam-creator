@@ -34,7 +34,7 @@ Read references/roles.md
 **第 0 步 Update Check（自动）**：后台拉取最新 version 对比本地，如有新版一行通知后继续
 **第 0 步 Detect（自动）**：检查 `.plans/` 是否已存在 → 如有，提供恢复选项
 
-1. **需求咨询** — 向用户介绍团队机制、了解需求
+1. **需求咨询** — 向用户介绍团队机制、了解需求；**如启用阿里云生态集成，会触发 1.2.1/1.2.2/1.2.3 子流程**
 2. **确认方案** — 汇总需求，让用户确认团队配置
 3. 创建规划文件（含智能体子目录）
 4. 创建团队 + 生成智能体
@@ -130,6 +130,48 @@ Read references/roles.md
 
 **注意**：不要一次性抛出所有问题。根据用户的回答逐步深入，像正常对话一样自然交流。如果用户的需求已经很清晰，可以跳过部分问题。
 
+### 1.2.1 外部系统集成（如适用）
+
+询问用户三个问题（自然对话，不必逐字念）:
+
+1. 是否需要从禅道拉 Bug 单作为开发输入？
+2. 是否需要从 ARMS 拉错误事件作为开发输入？
+3. 是否需要让 dev 把代码推到云效 Codeup + 自动提 MR？
+
+> **判断指引**：如果用户在 1.2 提到"内部使用"、"公司在用阿里云"、"和现有 DevOps 流程联动"等线索，主动问起这三项；否则可以一句话扫过、看用户态度。
+
+任一为"是" → 进入 1.2.2 校验对应 MCP 已就位。
+全为"否" → 跳过 1.2.2 / 1.2.3，按上游标准流程走 1.3。
+
+### 1.2.2 MCP 校验（仅当 1.2.1 任一选"是"时执行）
+
+对用户回答"是"的每一个集成项，校验 MCP 已配置：
+
+| 集成项 | 校验方法 |
+|--------|---------|
+| 禅道 | 让用户运行 `cat ~/.claude/mcp.json \| grep zentao`；或主对话里说"列出 zentao 工具"看是否返回工具列表 |
+| ARMS | 同上，查 aliyun-api MCP |
+| Codeup | 1. 同上查 yunxiao MCP；2. `git -C <project> remote -v` 看是否有 codeup 远程 |
+
+**任一项缺失** → 停在此步，引用 `references/mcp-setup.md`，让用户先装好再回来继续。**绝不**在缺失依赖的情况下创建团队，否则 bug-triage 会立刻失败。
+
+### 1.2.3 是否启用 ARMS 定时巡检（仅当 1.2.1 选了 ARMS 时执行）
+
+询问用户：
+
+- 是否要每天自动巡检 ARMS 错误并落 intake？
+- 巡检时间：默认 `0 9 * * *`（每天 9:00），可改
+- ARMS 项目 ID：用户从 ARMS 控制台复制
+- 严重级阈值：默认 P0 + P1（用户可放宽到 P2）
+
+如启用：
+
+1. 用 `CronCreate` 创建任务（详细参数见 references/templates.md § ARMS 巡检配置）
+2. 把配置写入即将生成的 CLAUDE.md（在第 3.5 步阶段）
+3. 把 CronCreate 返回的 task ID 也写入 CLAUDE.md，方便用户日后管理
+
+不启用 → 跳过，用户只能靠手动 `/ccteam-scan` 触发。
+
 ### 1.3 推荐团队配置
 
 根据用户需求，推荐合适的角色组合。解释每个角色的作用和为什么推荐它。
@@ -144,6 +186,7 @@ Read references/roles.md
 | 后端开发  | backend-dev  | tdd-guide        | sonnet | 写代码 + TDD + 大任务按 task 分文件夹  |
 | 前端开发  | frontend-dev | tdd-guide        | sonnet | 写代码 + TDD + 大任务按 task 分文件夹  |
 | 探索/研究 | researcher   | —                | sonnet | 代码搜索 + 网页搜索 + 只读不改代码        |
+| Bug 翻译 | bug-triage   | —                | sonnet | 拉外部 Bug/Error 数据 → 写 intake，read-only on code（仅 1.2.1 选了禅道或 ARMS 时推荐） |
 | 联调测试  | e2e-tester   | e2e-runner       | sonnet | E2E 测试 + 浏览器自动化 + Bug 记录    |
 | 代码审查  | reviewer     | code-reviewer    | sonnet | 只读审查 + 安全/质量/性能深度检查         |
 | 管家    | custodian    | refactor-cleaner | sonnet | 约束合规 + 文档治理 + 模式→自动化 + 代码清理 |
@@ -164,6 +207,7 @@ Read references/roles.md
   - 按量拆分时按编号命名（`researcher-1`/`researcher-2`），按方向拆分时按方向命名（`researcher-api`/`researcher-arch`）。每个有独立的 `.plans/` 目录。无竞态——researcher 对源代码只读
   - **反模式**：方向 B 依赖方向 A 的结论时不要拆（如"先确定认证方案，再调研实现库"）——单个 researcher 按顺序做比两个排队等依赖更快
 - **custodian 适用于 4+ 智能体团队或长期项目**。小团队（2-3 个智能体）custodian 的开销可能不值得——team-lead 可以直接承担合规检查
+- **bug-triage 仅在 1.2.1 启用了禅道或 ARMS 集成时推荐**——它是 1.2.1 的下游产物，没有外部触发源时会变成空跑的角色。MCP 都到位是必要前提
 - 用户可以添加自定义角色（解释自定义角色需要提供：名称、职责、模型选择）
 
 **非软件项目适配**：
@@ -450,6 +494,7 @@ ERROR: api-contracts.md out of sync
 - **语言跟随用户**：根据第 1 步观察到的用户语言决定团队语言。用户用中文则团队中文回复；用户用英文则团队英文回复。不要硬编码语言偏好
 - **大任务先写方案再派发**：跨 3+ 角色或 5+ tool calls 的任务，team-lead 必须先写 `.plans/<project>/session-<N>-<topic>-plan.md`（目标 / 方案 / 参数 / 任务拆分 / 下发顺序 / 回滚）**再** SendMessage。派发消息只引用 plan 章节，不在消息里重复上下文，禁止边派边想
 - **可派的不自己做**：team-lead 禁止自己执行 commit / push / SSH 巡检 / 脏文件清理 / deploy.sh 运行——这些一律派给 backend-dev（或对应角色）。team-lead 只做决策、跨仓库协调、不可派的本地动作（KP-1 重启等）、custodian 派发
+- **External integration gates**：启用禅道/ARMS/Codeup 集成的项目，setup 必须先过第 1.2.2 步 MCP 校验；任何缺失依赖都禁止往后走，否则 bug-triage 与 dev 的 MR 流程会在运行时失败
 
 ## Team-Lead 运营指南
 
