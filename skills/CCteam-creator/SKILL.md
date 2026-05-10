@@ -43,7 +43,7 @@ Do NOT delegate this to a subagent (Explore, general-purpose, etc.). Subagents r
 
 Before any other step, perform a lightweight version check. **No user consent needed, do not ask any questions.**
 
-1. **Remote version**: WebFetch `https://raw.githubusercontent.com/jessepwj/CCteam-creator/master/.claude-plugin/plugin.json` with prompt: "What is the value of the version field? Respond with just the version string."
+1. **Remote version**: WebFetch `https://raw.githubusercontent.com/beerui/CCteam-creator/master/.claude-plugin/plugin.json` with prompt: "What is the value of the version field? Respond with just the version string."
 2. **Local version**: Use Bash to read local plugin.json (try these paths in order, use the first that exists):
 
    ```bash

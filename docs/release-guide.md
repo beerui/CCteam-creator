@@ -179,7 +179,7 @@ git push origin master
 
 ### 第 7 步:验证 GitHub 上的提交
 
-打开 https://github.com/jessepwj/CCteam-creator/commits/master ,确认:
+打开 https://github.com/beerui/CCteam-creator/commits/master ,确认:
 - [ ] 最新 commit 是你推的那个
 - [ ] Commit message 没有渲染错误
 - [ ] 文件 diff 看起来和你本地一致
@@ -198,7 +198,7 @@ git push origin master
 
 # 2. 如果上一步说 "no changes" 但你确实推了新版,强制刷新:
 /plugin marketplace remove ccteam
-/plugin marketplace add jessepwj/CCteam-creator
+/plugin marketplace add beerui/CCteam-creator
 
 # 3. 安装/升级 plugin
 /plugin install CCteam-creator@ccteam           # EN
@@ -412,7 +412,7 @@ git revert <bad-commit-sha>
 **绕法**:
 ```
 /plugin marketplace remove ccteam
-/plugin marketplace add jessepwj/CCteam-creator
+/plugin marketplace add beerui/CCteam-creator
 /plugin install CCteam-creator@ccteam
 /plugin install CCteam-creator-cn@ccteam
 /reload-plugins

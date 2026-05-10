@@ -44,7 +44,7 @@ Read references/roles.md
 
 在进入任何其他步骤之前，做一次轻量的版本检查。**不需要用户同意，不要问任何问题。**
 
-1. **远程版本**：WebFetch `https://raw.githubusercontent.com/jessepwj/CCteam-creator/master/.claude-plugin/plugin.json`，prompt 写："What is the value of the version field? Respond with just the version string."
+1. **远程版本**：WebFetch `https://raw.githubusercontent.com/beerui/CCteam-creator/master/.claude-plugin/plugin.json`，prompt 写："What is the value of the version field? Respond with just the version string."
 2. **本地版本**：用 Bash 读本地 plugin.json（按顺序试以下路径，用第一个存在的）：
 
    ```bash

@@ -1,190 +1,184 @@
 # CCteam-creator
 
-> Multi-agent team orchestration skill for [Claude Code](https://code.claude.com/).
+> [Claude Code](https://code.claude.com/) 多智能体团队编排技能。
 
-**One skill, a full engineering team.** CCteam-creator turns a single Claude Code session into a coordinated team of 2-6 AI agents — with built-in CI enforcement, code review, doc-code sync, and a taste feedback loop that encodes your preferences into automated checks. Human steers, agents execute.
+**一个技能，一支完整的工程团队。** CCteam-creator 将单个 Claude Code 会话变成 2-6 个 AI 智能体的协作团队 —— 内置 CI 强制执行、代码审查、文档-代码同步、以及将你的偏好编码为自动化检查的品味反馈循环。人类掌舵，智能体执行。
 
-[English](./README.md) | [中文](./README_CN.md)
+> 基于 [jessepwj/CCteam-creator](https://github.com/jessepwj/CCteam-creator) v1.4.3 演进，新增阿里云生态集成（云效 Codeup MR 自动提交 / 禅道 Bug 单 intake / ARMS 错误巡检）。
 
-> Based on [jessepwj/CCteam-creator](https://github.com/jessepwj/CCteam-creator) v1.4.3, extended with Aliyun ecosystem integration (Yunxiao Codeup MR auto-submission / Zentao bug intake / ARMS error monitoring).
+## 0.1.0 新增能力
 
-## What's New in 0.1.0
+- **`bug-triage` 角色**：拉禅道 Bug 单 / ARMS 错误事件 → 落到 `.plans/<project>/intake/` 候选池
+- **dev MR 自动提交**：评审通过后自动 git push + 调用云效 MCP 创建 MR
+- **`/ccteam-scan` 斜杠命令**：立即触发巡检
+- **CronCreate 定时巡检**：默认每天 9:00 扫 ARMS 错误
+- **Intake Processing Protocol**：6 状态机 + team-lead 主动汇报
 
-- **`bug-triage` role**: pulls Zentao bugs / ARMS error events → writes them to `.plans/<project>/intake/` candidate pool
-- **dev MR auto-submission**: after review passes, auto git push + Yunxiao MCP creates the MR
-- **`/ccteam-scan` slash command**: trigger an immediate scan
-- **CronCreate scheduled scan**: by default sweeps ARMS errors daily at 9:00
-- **Intake Processing Protocol**: 6-state machine + team-lead proactive briefing
+详见 [设计文档](docs/superpowers/specs/2026-05-10-ccteam-aliyun-design.md)、[实施 Plan](docs/superpowers/plans/2026-05-10-ccteam-aliyun-impl.md) 和 [intake 用户手册](docs/intake-protocol.cn.md)。
 
-See the [design doc](docs/superpowers/specs/2026-05-10-ccteam-aliyun-design.md), the [implementation plan](docs/superpowers/plans/2026-05-10-ccteam-aliyun-impl.md), and the [intake user manual](docs/intake-protocol.md).
+## 站在巨人的肩膀上
 
-## Standing on the Shoulders of Giants
+CCteam-creator 基于以下优秀的开源项目和工程实践构建：
 
-CCteam-creator is built upon outstanding open-source projects and engineering practices:
-
-| Source | What We Learned |
-|--------|-----------------|
-| [**planning-with-files**](https://github.com/OthmanAdi/planning-with-files) | Manus-style persistent markdown planning — the 3-file pattern (task_plan.md / findings.md / progress.md) that survives context compression. The "context window = RAM, file system = disk" philosophy. |
-| [**everything-claude-code**](https://github.com/affaan-m/everything-claude-code) | Agent harness optimization by Anthropic hackathon winner. 13 expert agents, 40+ skills. Inspired our role-based agent design and skill structure. |
-| [**mattpocock/skills**](https://github.com/mattpocock/skills) | TDD vertical-slice philosophy, "design it twice" parallel sub-agent pattern, interface durability principles, and plan stress-testing methodology. |
-| [**OpenAI Harness Engineering**](https://openai.com/index/harness-engineering/) | The discipline of designing constraints, feedback loops, and documentation systems that make AI agents reliable at scale. Inspired our docs/ knowledge base, invariant-driven review, Doc-Code Sync, failure-to-guardrail loop, and anti-bloat principles. |
-| [**Anthropic Harness Design**](https://www.anthropic.com/engineering/harness-design) | Anthropic Labs' research on multi-agent architectures for long-running autonomous coding. Three key lessons absorbed into CCteam-creator: (1) **Evaluator calibration** — out-of-the-box LLMs are poor QA agents that rationalize away issues; the fix is few-shot calibration anchors with concrete STRONG/WEAK examples, which shaped our Review Dimensions system. (2) **Every harness component is an assumption** — each mechanism encodes a belief about what the model can't do alone, and these assumptions go stale as models improve; this became our Assumption Audit checklist. (3) **Generator-evaluator separation** — separating the agent doing the work from the agent judging it is more tractable than making a generator self-critical, validating our existing dev/reviewer split and motivating the anti-leniency rule. |
+| 来源 | 我们学到的 |
+|------|-----------|
+| [**planning-with-files**](https://github.com/OthmanAdi/planning-with-files) | Manus 风格的持久化 Markdown 规划 — 三文件模式（task_plan.md / findings.md / progress.md），经得起上下文压缩。"上下文窗口 = 内存，文件系统 = 磁盘"的核心理念。 |
+| [**everything-claude-code**](https://github.com/affaan-m/everything-claude-code) | Anthropic 黑客松获奖者的智能体优化体系。13 个专家智能体，40+ 技能。启发了我们的角色化智能体设计和技能结构。 |
+| [**mattpocock/skills**](https://github.com/mattpocock/skills) | TDD 垂直切片哲学、"设计两次"并行子智能体模式、接口耐久性原则、以及方案压测方法论。 |
+| [**OpenAI Harness Engineering**](https://openai.com/index/harness-engineering/) | 设计约束、反馈循环和文档系统以使 AI 智能体在规模化下可靠运行的工程学科。启发了我们的 docs/ 知识库、不变量驱动审查、Doc-Code 同步、失败→护栏闭环、以及反膨胀原则。 |
+| [**Anthropic Harness Design**](https://www.anthropic.com/engineering/harness-design) | Anthropic Labs 关于长时自主编码的多智能体架构研究。三个核心经验被吸收进 CCteam-creator：(1) **评估器校准** — 开箱即用的 LLM 是糟糕的 QA，会自我说服问题不大；解法是用 few-shot 校准锚点（具体的 STRONG/WEAK 示例）锚定判断标准，这催生了我们的 Review Dimensions 评审维度体系。(2) **每个 Harness 组件都是一个假设** — 每个机制都编码了"模型做不好什么"的信念，这些假设会随模型进步而过时；这成为了我们的 Assumption Audit 假设审查清单。(3) **生成-评估分离** — 让做事的智能体和评判的智能体分开，比让生成者自我批评更有效，验证了我们现有的 dev/reviewer 分离架构，并催生了 anti-leniency（反宽容）规则。 |
 
 ---
 
-## What It Does
+## 功能概述
 
-CCteam-creator sets up parallel AI agent teams in Claude Code. Instead of a single AI assistant, you orchestrate multiple specialized agents — developers, researchers, testers, reviewers — working together on your project.
+CCteam-creator 在 Claude Code 中设置并行 AI 智能体团队。不再是单个 AI 助手，而是多个专业智能体 —— 开发、研究、测试、审查 —— 协同工作。
 
-When invoked, CCteam-creator:
+调用后，CCteam-creator 会：
 
-1. **Consults with you** — explains how agent teams work, understands your project, recommends a team
-2. **Sets up everything** — planning files, docs/ knowledge base, CLAUDE.md operations guide, agent onboarding
-3. **Manages collaboration** — agents communicate directly, persist state to files, follow built-in protocols
+1. **先沟通** — 介绍团队机制，了解项目需求，推荐团队配置
+2. **完成搭建** — 创建规划文件、docs/ 知识库、CLAUDE.md 运营手册、智能体入职
+3. **管理协作** — 智能体直接沟通，状态持久化到文件，遵循内置协议
 
-## How It Works — Full Lifecycle
+## 工作流程 — 完整生命周期
 
-Here's a complete walkthrough of how CCteam-creator operates, from first invocation to project completion and session resume.
+以下是 CCteam-creator 从首次调用到项目完成再到会话恢复的完整流程。
 
-### Phase 1: Setup (First Session)
+### 阶段 1：搭建（首次会话）
 
 ```
-You: "Set up a team for my e-commerce project"
+你："帮我的电商项目搭建一个团队"
 
-┌─ Step 1: Consultation ──────────────────────────────────┐
-│ team-lead (Claude) asks about:                          │
-│ - Project goals and deliverables                        │
-│ - Task type (software, research, etc.)                  │
-│ - Current state (greenfield or existing code)           │
-│ - Quality priorities → become Review Dimensions         │
-│ team-lead recommends: backend-dev + frontend-dev +      │
-│   researcher + reviewer (4 agents)                      │
-└─────────────────────────────────────────────────────────┘
-         ↓ user confirms
-┌─ Step 2-3: File Creation ───────────────────────────────┐
-│ Creates .plans/ecommerce/ with:                         │
-│   task_plan.md, decisions.md, docs/, per-agent dirs     │
-│ Generates CLAUDE.md (always in context, survives        │
-│   compressions — the team's persistent memory)          │
-└─────────────────────────────────────────────────────────┘
+┌─ 第 1 步：需求沟通 ─────────────────────────────────────┐
+│ team-lead（Claude）了解：                                │
+│ - 项目目标和交付物                                       │
+│ - 任务类型（软件开发、研究等）                             │
+│ - 当前状态（全新项目还是已有代码）                         │
+│ - 质量优先级 → 成为评审维度（Review Dimensions）           │
+│ team-lead 推荐：backend-dev + frontend-dev +             │
+│   researcher + reviewer（4 个智能体）                     │
+└──────────────────────────────────────────────────────────┘
+         ↓ 用户确认
+┌─ 第 2-3 步：创建文件 ──────────────────────────────────── ┐
+│ 创建 .plans/ecommerce/：                                 │
+│   task_plan.md、decisions.md、docs/、各智能体目录          │
+│ 生成 CLAUDE.md（始终在上下文中，压缩后不丢失               │
+│   —— 团队的持久化记忆）                                   │
+└───────────────────────────────────────────────────────────┘
          ↓
-┌─ Step 4: Spawn & Snapshot ──────────────────────────────┐
-│ Spawns all agents in parallel with onboarding prompts   │
-│ Saves team-snapshot.md (complete onboarding prompts     │
-│   + skill file timestamps → enables fast resume)        │
-└─────────────────────────────────────────────────────────┘
+┌─ 第 4 步：生成智能体 & 快照 ──────────────────────────────┐
+│ 并行生成所有智能体，发送入职 prompt                        │
+│ 保存 team-snapshot.md（完整入职 prompt                     │
+│   + skill 文件时间戳 → 下次快速恢复）                      │
+└───────────────────────────────────────────────────────────┘
 ```
 
-### Phase 2: Collaboration (Working Session)
+### 阶段 2：协作（工作会话）
 
 ```
-┌─ team-lead (you + Claude main session) ─────────────────┐
+┌─ team-lead（你 + Claude 主会话）────────────────────────┐
 │                                                         │
-│  Dispatches tasks via SendMessage:                      │
+│  通过 SendMessage 下发任务：                              │
 │  ┌──────────────┐  ┌──────────────┐                     │
 │  │ researcher   │  │ backend-dev  │                     │
-│  │ explores     │  │ waits for    │                     │
-│  │ codebase     │  │ research     │                     │
+│  │ 探索代码库    │  │ 等待研究结果  │                     │
 │  └──────┬───────┘  └──────┬───────┘                     │
 │         │ findings.md     │                             │
-│         └────────────────→│ reads findings,             │
-│                           │ confirms understanding,     │
-│                           │ then builds feature         │
+│         └────────────────→│ 读取 findings，              │
+│                           │ 确认理解后开始开发            │
 │                           └──────┬───────┐              │
 │                                  │       ↓              │
 │                           ┌──────┴──┐ ┌─────────┐       │
-│                           │ request │ │ reviewer │       │
-│                           │ review  │→│ scores   │       │
-│                           │(direct) │ │ dims +   │       │
-│                           └─────────┘ │ issues   │       │
+│                           │ 请求审查 │ │ reviewer │       │
+│                           │（直接）  │→│ 维度评分  │       │
+│                           └─────────┘ │ + 问题列表│       │
 │                                       └──┬──────┘       │
-│  Key behaviors:                          │              │
-│  • Dev confirms understanding before     │              │
-│    starting large tasks                  │              │
-│  • Dev escalates ambiguous/irreversible  │              │
-│    decisions with options + recommendation│              │
-│  • Reviewer scores project-specific      │              │
-│    dimensions with anti-leniency rule    │              │
-│  • All progress persists to .plans/ files│              │
+│  关键行为：                               │              │
+│  · Dev 大任务前先确认理解                  │              │
+│  · Dev 遇到模糊/不可逆决策时               │              │
+│    带方案+推荐升级给 team-lead             │              │
+│  · Reviewer 按项目维度评分                 │              │
+│    配合反宽容规则                          │              │
+│  · 所有进度持久化到 .plans/ 文件           │              │
 └──────────────────────────────────────────┘
 ```
 
-### Phase 3: Resume (Next Session)
+### 阶段 3：恢复（下次会话）
 
 ```
-You: exit Claude Code, come back later
-You: "Resume my e-commerce project"
+你：退出 Claude Code，过段时间回来
+你："恢复我的电商项目"
 
-┌─ Fast Resume Path ──────────────────────────────────────┐
-│ 1. CLAUDE.md auto-loads → team-lead knows the roster    │
-│ 2. Reads team-snapshot.md header → checks timestamps    │
-│    ┌─ skill files unchanged? ──→ use cached prompts     │
-│    └─ skill files updated?   ──→ ask: cache or re-read? │
-│ 3. Spawns agents from snapshot (skips ~2500 lines)      │
-│ 4. Each agent reads own .plans/ files → resumes work    │
-└─────────────────────────────────────────────────────────┘
+┌─ 快速恢复路径 ──────────────────────────────────────────┐
+│ 1. CLAUDE.md 自动加载 → team-lead 知道团队花名册          │
+│ 2. 读取 team-snapshot.md 头部 → 检查时间戳               │
+│    ┌─ skill 文件未变？ ──→ 直接用缓存 prompt             │
+│    └─ skill 文件有更新？ ──→ 询问：用缓存还是重新读取？    │
+│ 3. 从快照生成智能体（跳过约 2500 行 skill 文件读取）      │
+│ 4. 每个智能体读取自己的 .plans/ 文件 → 恢复工作           │
+└──────────────────────────────────────────────────────────┘
 
-No work is lost. All state lives in .plans/ files.
+不会丢失任何工作。所有状态都在 .plans/ 文件中。
 ```
 
-### Phase Boundaries: Harness Checks
+### 阶段边界：Harness 检查
 
-At the end of each phase, team-lead runs two types of checks:
+每个阶段结束时，team-lead 运行两类检查：
 
-- **Operational Health** — are docs fresh? are progress files maintained? any new Known Pitfalls?
-- **Assumption Audit** — is each harness component (task folders, 3-Strike, context recovery, reviewer pass) still adding value, or can it be simplified?
+- **运营健康** — 文档是否新鲜？进度文件是否维护？有新的 Known Pitfalls 吗？
+- **假设审查** — 每个 Harness 组件（task folder、3-Strike、上下文恢复、reviewer 审查）是否仍有价值，还是可以简化？
 
-## In Action
+## 实战演示
 
-Screenshots from a real project session (ChatR — a full-stack chat application with event-driven observability).
+以下截图来自真实项目会话（ChatR —— 全栈聊天应用，带事件驱动可观测性）。
 
-### 1. Team Roster & Dependency Chain
+### 1. 团队花名册 & 依赖链
 
-After setup, team-lead summarizes the team roster, task assignments, and dependency graph. All agents receive their onboarding and begin preparing.
+搭建完成后，team-lead 汇总团队成员、任务分配和依赖图。所有智能体接收入职信息并开始准备。
 
-![Team Roster](docs/images/01-team-roster.png)
+![团队花名册](docs/images/01-team-roster.png)
 
-### 2. Parallel Task Dispatch
+### 2. 并行任务调度
 
-Team-lead orchestrates 6 agents simultaneously — researcher and custodian start immediately (no dependencies), while devs prepare and wait for research output. Each agent knows its dependencies.
+Team-lead 同时编排 6 个智能体 —— researcher 和 custodian 立即启动（无依赖），dev 们准备就绪等待研究产出。每个智能体清楚自己的依赖关系。
 
-![Parallel Dispatch](docs/images/02-parallel-dispatch.png)
+![并行调度](docs/images/02-parallel-dispatch.png)
 
-### 3. Development Phase — 3 Agents Working in Parallel
+### 3. 开发阶段 — 3 个智能体并行工作
 
-Backend-dev, frontend-dev, and e2e-tester all working concurrently. Team-lead tracks status, makes scheduling decisions (e.g., bypassing a dependency when enough info is available), and coordinates handoffs.
+Backend-dev、frontend-dev 和 e2e-tester 同时工作。Team-lead 跟踪状态、做调度决策（如跳过依赖阻塞）、协调交接。
 
-![Development Phase](docs/images/03-development-phase.png)
+![开发阶段](docs/images/03-development-phase.png)
 
-### 4. Code Review & Peer Coordination
+### 4. 代码审查 & 对等协作
 
-Agents communicate directly — frontend-dev submits to reviewer, reviewer reports completion, team-lead tracks the status table with real-time progress from all 6 agents.
+智能体间直接通信 —— frontend-dev 提交审查给 reviewer，reviewer 报告完成，team-lead 通过状态表实时追踪全部 6 个智能体的进展。
 
-![Review Coordination](docs/images/04-review-coordination.png)
+![审查协作](docs/images/04-review-coordination.png)
 
-### 5. Phase Harness Validation
+### 5. 阶段 Harness 验收
 
-Team-lead runs a phase-level harness check — verifying each task's completion status, reviewer verdicts, e2e test results, and doc consistency before advancing to the next phase.
+Team-lead 运行阶段级 harness 检查 —— 验证每个任务的完成状态、reviewer 裁定、e2e 测试结果和文档一致性，确认后才推进到下一阶段。
 
-![Harness Validation](docs/images/05-harness-validation.png)
+![Harness 验收](docs/images/05-harness-validation.png)
 
-### 6. Final Dashboard — All Agents, One View
+### 6. 最终面板 — 全员一览
 
-The complete validation checklist with reviewer [OK], e2e-tester PASS/FAIL status, and doc consistency verification. Bottom shows Claude Code's real-time agent HUD with all 6 teammates and their token usage.
+完整验收清单，含 reviewer [OK]、e2e-tester PASS/FAIL 状态、文档一致性验证。底部展示 Claude Code 的实时智能体 HUD，显示全部 6 个队友及 token 用量。
 
-![Final Dashboard](docs/images/06-final-dashboard.png)
+![最终面板](docs/images/06-final-dashboard.png)
 
 ---
 
-## Prerequisites
+## 前置条件
 
-Agent teams are an experimental feature in Claude Code. Enable them first:
+智能体团队是 Claude Code 的实验性功能，需要先启用：
 
 ```bash
-# Option A: Environment variable
+# 方式 A：环境变量
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
-# Option B: In ~/.claude/settings.json
+# 方式 B：在 ~/.claude/settings.json 中
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
@@ -192,332 +186,332 @@ export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 }
 ```
 
-## Installation
+## 安装
 
-> **Important**: Install either the English OR Chinese version — not both.
+> **重要**：英文版和中文版只需安装一个，不要同时安装。
 
-### Option 1: Marketplace (Recommended)
+### 方式 1：Marketplace 安装（推荐）
 
 ```bash
-# Step 1: Add the marketplace (in Claude Code)
-/plugin marketplace add jessepwj/CCteam-creator
+# 第 1 步：添加 marketplace（在 Claude Code 中运行）
+/plugin marketplace add beerui/CCteam-creator
 
-# Step 2: Install — choose ONE language
-/plugin install CCteam-creator@ccteam        # English
-/plugin install CCteam-creator-cn@ccteam     # Chinese
+# 第 2 步：安装 — 选择一个语言
+/plugin install CCteam-creator@ccteam        # 英文
+/plugin install CCteam-creator-cn@ccteam     # 中文
 ```
 
-### Option 2: Manual Install (Direct Skill Copy)
+### 方式 2：手动安装（直接复制 skill 目录）
 
-If you prefer not to use the marketplace, just clone the repo and copy the skill folder directly into your local skills directory. After this, the skill appears directly in `~/.claude/skills/` and can be invoked with `/CCteam-creator` (or `/CCteam-creator-cn`) — **no `/reload-plugins` needed**.
+如果你不想用 marketplace 插件方式,可以直接把 skill 目录复制到本地 skills 目录。复制后 skill 直接出现在 `~/.claude/skills/` 里,用 `/CCteam-creator`(或 `/CCteam-creator-cn`)即可调用——**无需 `/reload-plugins`**。
 
 ```bash
-git clone https://github.com/jessepwj/CCteam-creator.git
+git clone https://github.com/beerui/CCteam-creator.git
 
-# English (recommended)
+# 英文版(推荐)
 cp -r CCteam-creator/skills/CCteam-creator ~/.claude/skills/CCteam-creator
 
-# Or Chinese
+# 或中文版
 cp -r CCteam-creator/cn/skills/CCteam-creator-cn ~/.claude/skills/CCteam-creator-cn
 ```
 
-Then **restart Claude Code once** (skills are discovered at session start). After restart:
+然后**重启 Claude Code 一次**(skill 在 session 启动时被发现)。重启后:
 
-- Slash command: `/CCteam-creator` or `/CCteam-creator-cn`
-- Natural language: "set up a team for my project" / "帮我搭建一个团队"
+- Slash 命令:`/CCteam-creator` 或 `/CCteam-creator-cn`
+- 自然语言:"帮我搭建一个团队" / "set up a team for my project"
 
-**To update later**: `cd` into the cloned repo, run `git pull`, and re-run the `cp -r` command above. The skill's built-in Step 0 Update Check will notify you inline when a new version is available on GitHub.
+**后续更新**:进入 clone 目录,运行 `git pull`,然后重新执行上面的 `cp -r` 命令即可。skill 内置的 Step 0 Update Check 会在新版本可用时自动通知你。
 
-### Option 3: Project-level Install
+### 方式 3：项目级安装
 
-Share with your team via a project-local skills directory. Copy into the project's `.claude/skills/`:
+通过项目目录和团队共享。复制到项目的 `.claude/skills/`:
 
 ```bash
-# English
+# 英文版
 cp -r CCteam-creator/skills/CCteam-creator .claude/skills/CCteam-creator
 
-# Or Chinese
+# 或中文版
 cp -r CCteam-creator/cn/skills/CCteam-creator-cn .claude/skills/CCteam-creator-cn
 ```
 
-## Usage
+## 使用方法
 
 ```
-> Set up a team for my e-commerce project
-> /CCteam-creator
-> Build a REST API with a team
+> 帮我的电商项目搭建一个团队
+> /CCteam-creator-cn
+> 我要做一个 REST API，帮我建个团队
 ```
 
-> The slash command is `/CCteam-creator` (or `/CCteam-creator-cn` for the Chinese variant). Natural language triggers also work — just ask to "set up a team" or similar. If you invoke via the Skill tool directly, use the full namespace: `Skill(CCteam-creator:CCteam-creator)`.
+> Slash 命令是 `/CCteam-creator-cn`(英文版是 `/CCteam-creator`)。自然语言触发也有效——直接说"帮我搭建团队"之类的即可。如果你通过 Skill 工具直接调用,用完整 namespace:`Skill(CCteam-creator-cn:CCteam-creator-cn)`。
 
-**Trigger keywords**: `team`, `swarm`, `start project`, `set up project`, `create team`, `build team`, `multi-agent project`.
+**触发关键词**：`团队`、`team`、`swarm`、`开始项目`、`创建团队`、`搭建团队`、`多智能体项目`。
 
-## Available Roles
+## 可用角色
 
-| Role | Name | Model | Key Capabilities |
-|------|------|-------|-----------------|
-| Backend Dev | `backend-dev` | sonnet | Server code + TDD + Doc-Code Sync + observability (when applicable) |
-| Frontend Dev | `frontend-dev` | sonnet | Client code + TDD + Doc-Code Sync + component testing |
-| Researcher | `researcher` | sonnet | Code search + web research + plan stress-testing (read-only) |
-| E2E Tester | `e2e-tester` | sonnet | Playwright E2E + event-first debugging + bug tracking |
-| Code Reviewer | `reviewer` | sonnet | Security/quality/performance + doc consistency + invariant-driven review |
-| Custodian | `custodian` | sonnet | Constraint compliance + doc governance + pattern→automation + code cleanup |
+| 角色 | 名称 | 模型 | 核心能力 |
+|------|------|------|---------|
+| 后端开发 | `backend-dev` | sonnet | 服务端代码 + TDD + Doc-Code 同步 + 可观测性（适用时） |
+| 前端开发 | `frontend-dev` | sonnet | 客户端代码 + TDD + Doc-Code 同步 + 组件测试 |
+| 探索/研究 | `researcher` | sonnet | 代码搜索 + 网页调研 + 方案压测（只读） |
+| 联调测试 | `e2e-tester` | sonnet | Playwright E2E + 事件优先调试 + Bug 追踪 |
+| 代码审查 | `reviewer` | sonnet | 安全/质量/性能 + 文档一致性 + 不变量驱动审查 |
+| 管家 | `custodian` | sonnet | 约束合规 + 文档治理 + 模式→自动化 + 代码清理 |
 
-You don't need all roles. CCteam-creator recommends the right combination for your project.
+不是每个项目都需要全部角色。CCteam-creator 会根据你的需求推荐合适的组合。
 
-## Key Features
+## 核心特性
 
-### Team-Lead as Control Plane
+### Team-Lead 作为控制平面
 
-The main conversation acts as team-lead — not just a task dispatcher, but the **control plane** owning user alignment, phase gates, and the team's durable operating rules. Team-lead maintains the project CLAUDE.md (always in context), task_plan.md, and decisions.md.
+主对话作为 team-lead——不只是任务派发器，而是**控制平面**，负责用户对齐、阶段门禁和团队持久化运营规则。Team-lead 维护项目 CLAUDE.md（始终在上下文中）、task_plan.md 和 decisions.md。
 
-### docs/ Knowledge Base (Harness Engineering)
+### docs/ 知识库（Harness Engineering）
 
-Inspired by OpenAI's harness engineering approach, each project gets a structured `docs/` directory as the single source of truth:
+受 OpenAI Harness Engineering 方法启发，每个项目都有结构化的 `docs/` 目录作为知识的唯一真理源：
 
 ```
 .plans/<project>/docs/
-  architecture.md     -- System architecture, components, data flow
-  api-contracts.md    -- Frontend-backend API definitions (field-level specs)
-  invariants.md       -- Unbreakable system boundaries (security, data isolation, contracts)
+  architecture.md     -- 系统架构、组件、数据流
+  api-contracts.md    -- 前后端 API 定义（字段级规范）
+  invariants.md       -- 不可违反的系统边界（安全、数据隔离、接口契约）
 ```
 
-**Doc-Code Sync**: When code changes an API or architecture, devs MUST update the corresponding docs/ file. Reviewer checks this on every review. Undocumented APIs don't exist for other agents.
+**Doc-Code 同步**：代码变更 API 或架构时，dev 必须同步更新对应的 docs/ 文件。Reviewer 每次审查都检查这一点。未文档化的 API 对其他智能体来说不存在。
 
-### Lean Navigation Map
+### 精简导航图
 
-task_plan.md is a **navigation map**, not an encyclopedia. Architecture, API specs, and tech stack details live in `docs/`. This keeps the main plan focused and prevents bloat — the plan stays readable even in large projects.
+task_plan.md 是一张**导航图**，不是百科全书。架构、API 规范和技术栈细节放在 `docs/` 中。主计划保持聚焦可读，即使大项目也不会膨胀。
 
-### Invariant-Driven Review
+### 不变量驱动审查
 
-Recurring bug patterns are promoted from Known Pitfalls to formal invariants in `docs/invariants.md`. Reviewer checks code against invariants and recommends converting repeated patterns into automated tests. Goal: automated tests are the first line of defense, reviewer is the second.
+反复出现的 Bug 模式从 Known Pitfalls 提升为 `docs/invariants.md` 中的正式不变量。Reviewer 对照不变量检查代码，并建议将重复模式转为自动化测试。目标：自动化测试是第一道防线，reviewer 是第二道。
 
-### Failure-to-Guardrail Loop
+### 失败→护栏闭环
 
-When a 3-Strike escalation is resolved or a reviewer [BLOCK] is fixed, team-lead asks: "Will this recur?" If yes, it gets captured in CLAUDE.md's Known Pitfalls section — ensuring the same mistake never happens again. This is the core harness engineering insight: every failure becomes a permanent guardrail.
+当 3-Strike 上报解决或 reviewer [BLOCK] 修复后，team-lead 会问："会再发生吗？"如果会，就记入 CLAUDE.md 的 Known Pitfalls——确保同样的错误不再发生。这是 Harness Engineering 的核心洞察：每次失败都变成永久性护栏。
 
-### Anti-Bloat Principles
+### 反膨胀原则
 
-Learned from real projects where files grew to 50,000+ tokens:
-- **Root findings.md** is a pure index — no content dumping
-- **progress.md** gets archived when it becomes too long to scan
-- **task_plan.md** stays lean — details belong in docs/
+源自文件膨胀到 50,000+ token 的实战教训：
+- **根 findings.md** 是纯索引——不堆内容
+- **progress.md** 太长时归档旧条目
+- **task_plan.md** 保持精简——细节属于 docs/
 
-### Requirements Alignment (Phase 0)
+### 需求对齐（阶段 0）
 
-Before any development starts, the team performs structured requirements alignment:
-- **Researcher** explores the existing codebase and documents architecture
-- **Team-lead** aligns detailed requirements with the user
-- Architecture decisions and scope are recorded in the plan before assigning dev tasks
+开发前，团队先进行结构化需求对齐：
+- **Researcher** 探索现有代码库，记录架构现状
+- **Team-lead** 与用户深入对齐需求细节
+- 架构决策和范围写入计划后，才开始分配开发任务
 
-### Vertical Slice Task Decomposition
+### 垂直切片任务分解
 
-Tasks are broken into **vertical slices** (tracer bullets), not horizontal layers. Each slice cuts through all layers end-to-end (schema → API → UI → tests) and is independently verifiable.
+任务按**垂直切片**（tracer bullet）拆分，不按技术层水平拆。每个切片贯穿所有层（schema → API → UI → 测试），可独立验证。
 
-### TDD with Depth
+### 深度 TDD
 
-Developers follow enhanced TDD:
-- **Vertical slices**: one test → one implementation → repeat (never all tests first)
-- **Behavior testing**: test WHAT the system does through public interfaces, not HOW
-- **Mock boundaries**: only mock at system boundaries (external APIs, databases), never internal modules
+开发者遵循增强版 TDD：
+- **垂直切片**：一个测试 → 一个实现 → 重复（绝不先写所有测试）
+- **行为测试**：通过公开接口测试系统做什么，而非怎么做
+- **Mock 边界**：只在系统边界 mock（外部 API、数据库），不 mock 内部模块
 
-### Architecture-Aware Code Review with Calibrated Scoring
+### 架构感知代码审查 + 校准评分
 
-The reviewer checks security/quality/performance, plus:
-- **Doc-Code consistency** — API/architecture docs updated?
-- **Invariant violations** — does the change break system boundaries?
-- **Shallow module detection** — interface complexity ≈ implementation complexity
-- **Test strategy** — "replace, don't layer" redundant tests
+Reviewer 不仅检查安全/质量/性能，还检查：
+- **Doc-Code 一致性** — API/架构文档是否同步更新？
+- **不变量违反** — 变更是否突破了系统边界？
+- **浅模块检测** — 接口复杂度 ≈ 实现复杂度
+- **测试策略** — "替换而非叠加"冗余测试
 
-**Review Dimensions** (inspired by Anthropic's evaluator calibration research): Each project defines 3-5 weighted review dimensions during setup (e.g., product depth, code testability, API design elegance). The reviewer scores each dimension as STRONG / ADEQUATE / WEAK with calibration anchors — concrete descriptions of what good and bad look like in this project's context. If any dimension scores WEAK, the review cannot pass. An **anti-leniency rule** prevents the reviewer from rationalizing issues away — a known failure mode of LLM self-evaluation identified in Anthropic's research.
+**评审维度**（受 Anthropic 评估器校准研究启发）：每个项目在搭建时定义 3-5 个加权评审维度（如产品深度、代码可测试性、API 设计优雅度）。Reviewer 对每个维度评分 STRONG / ADEQUATE / WEAK，配合校准锚点——用具体描述说明在这个项目的上下文中，好和差分别长什么样。任何维度评分 WEAK 则审查不能通过。**反宽容规则**防止 reviewer 自我说服问题不大——这是 Anthropic 研究中识别出的 LLM 自评估的已知失败模式。
 
-### Observability Support (When Applicable)
+### 可观测性支持（适用时）
 
-For web apps and services, devs are guided to emit structured events. E2E tester uses **event-first debugging**: query event logs first, browser console second, screenshots last. Insufficient observability is tagged `[OBSERVABILITY-GAP]` — a higher-priority finding than the bug itself.
+对于 Web 应用和服务，引导 dev 发出结构化事件。E2E tester 使用**事件优先调试**：先查事件日志，再看浏览器控制台，最后才截图。可观测性不足标记为 `[OBSERVABILITY-GAP]`——比 Bug 本身更高优先级的发现。
 
-### Golden Rules (Pre-installed CI Checks)
+### 黄金原则（预置 CI 检查）
 
-Every project ships with `golden_rules.py` — 5 universal code health checks that run automatically as part of CI:
+每个项目自带 `golden_rules.py` —— 5 项通用代码健康检查，作为 CI 的一部分自动运行：
 
-| Check | What It Catches |
-|-------|----------------|
-| GR-1 File Size | Files over 800/1200 lines |
-| GR-2 Secrets | Hardcoded API keys, tokens, passwords |
-| GR-3 Console Log | console.log in production code |
-| GR-4 Doc Freshness | docs/ files stale vs source code |
-| GR-5 Invariant Coverage | Invariants without automated tests |
+| 检查 | 检测内容 |
+|------|---------|
+| GR-1 文件大小 | 超过 800/1200 行的文件 |
+| GR-2 密钥 | 硬编码的 API key、token、password |
+| GR-3 Console Log | 生产代码中的 console.log |
+| GR-4 文档新鲜度 | docs/ 文件相对源代码是否过时 |
+| GR-5 不变量覆盖 | 没有自动化测试的不变量 |
 
-All error messages are agent-readable (`[WHAT] + [WHERE] + [HOW TO FIX]`), so agents can fix issues directly. Custodian adds project-specific checks over time — the script grows with the project.
+所有错误信息都是智能体可读的（`[问题] + [位置] + [修复方法]`），智能体可以直接修复。custodian 随时间添加项目特定检查——脚本随项目一起成长。
 
-### Taste Feedback Loop
+### 品味反馈循环
 
-User preferences don't get lost between sessions. When you say "don't name it like that" or "always use X pattern":
+用户偏好不会在会话间丢失。当你说"不要这样命名"或"以后都用 X 模式"时：
 
-1. **team-lead captures** the preference in CLAUDE.md `Style Decisions`
-2. **reviewer checks** new code against recorded style decisions
-3. **After 3+ occurrences**, custodian **encodes it into golden_rules.py** as an automated check
-4. The preference is now **mechanically enforced** — no one needs to remember it
+1. **team-lead 捕获**偏好，记录到 CLAUDE.md `风格决策`
+2. **reviewer 检查**新代码是否符合已记录的风格决策
+3. **出现 3+ 次后**，custodian **编码到 golden_rules.py** 成为自动化检查
+4. 偏好现在被**机械化强制** —— 无需任何人记住
 
-This is the taste-to-code pipeline: human judgment becomes automated enforcement.
+这就是品味到代码的管线：人类判断变成自动化执行。
 
-### Team Snapshot (Fast Resume)
+### 团队快照（快速恢复）
 
-When a team is first created, CCteam-creator saves a **team snapshot** (`.plans/<project>/team-snapshot.md`) containing the fully rendered onboarding prompts for every agent, along with skill source file timestamps. When you resume a project after exiting Claude Code:
+首次创建团队时，CCteam-creator 会保存一份**团队快照**（`.plans/<project>/team-snapshot.md`），包含每个 agent 完整渲染后的入职 prompt 和 skill 源文件时间戳。退出 Claude Code 后恢复项目时：
 
-- **Skill files unchanged** → agents are spawned directly from cached prompts, skipping the expensive re-read of all skill reference files (~2500 lines → ~200 lines)
-- **Skill files updated** → lead is informed and can choose: fast resume with cached config, or re-read skill files to pick up latest protocol changes
+- **Skill 文件未变** → 直接用缓存的 prompt 生成 agent，跳过重新读取所有 skill 参考文件（~2500 行 → ~200 行）
+- **Skill 文件有更新** → 通知 lead，可选择：用缓存快速恢复，或重新读取 skill 文件以获取最新协议变更
 
-This makes team resume nearly instant while ensuring you always know when cached config might be stale.
+这使团队恢复几乎即时完成，同时确保你始终知道缓存配置是否可能过时。
 
-### File-Based State Persistence
+### 文件持久化
 
-All progress persists to `.plans/<project>/`:
+所有进度持久化到 `.plans/<project>/`：
 
 ```
 .plans/<project>/
-  task_plan.md          -- Lean navigation map
-  team-snapshot.md      -- Cached onboarding prompts for fast resume
-  docs/                 -- Project knowledge base
+  task_plan.md          -- 精简导航图
+  team-snapshot.md      -- 缓存的入职 prompt，用于快速恢复
+  docs/                 -- 项目知识库
     architecture.md / api-contracts.md / invariants.md
-  archive/              -- Archived history
+  archive/              -- 归档历史
 
   backend-dev/
-    findings.md         -- INDEX → task findings
+    findings.md         -- 索引 → 各任务 findings
     task-auth/
       task_plan.md / findings.md / progress.md
 
   researcher/
-    findings.md         -- INDEX → research reports
+    findings.md         -- 索引 → 各调研报告
     research-tech-stack/
-      findings.md       -- Research report (main deliverable)
+      findings.md       -- 调研报告（核心交付物）
 
   reviewer/
-    findings.md         -- INDEX → review reports
+    findings.md         -- 索引 → 各审查报告
     review-auth-module/
-      findings.md       -- Full review report
+      findings.md       -- 完整审查报告
 ```
 
-### Built-in Agent Protocols
+### 内置智能体协议
 
-| Protocol | Purpose |
-|----------|---------|
-| 2-Action Rule | Write findings after every 2 search operations |
-| 3-Strike Escalation | Escalate after 3 failures, never silent retry |
-| Guardrail Capture | Turn resolved failures into Known Pitfalls |
-| Context Recovery | Progressive disclosure: docs/ → task files → progress |
-| Periodic Self-Check | Verify alignment with plan every ~10 tool calls |
-| Doc-Code Sync | Devs update docs/ when code changes; reviewer verifies |
-| Phase Health Check | Verify doc freshness, stale tasks, index integrity at phase boundaries |
-| Assumption Audit | Review whether each harness component is still load-bearing at model upgrades or retros |
-| Review Dimensions | Reviewer scores project-specific quality dimensions with calibration anchors |
-| Escalation Judgment | Devs classify decisions: decide yourself vs must ask team-lead with options |
-| Task Confirmation | Devs read full context and confirm understanding before starting large tasks |
-| Taste Capture | Record user style preferences; encode into automated checks after 3+ occurrences |
-| Golden Rules CI | Pre-installed checks run automatically; custodian adds project-specific checks over time |
+| 协议 | 作用 |
+|------|------|
+| 2-Action Rule | 每 2 次搜索操作后写 findings |
+| 3-Strike 上报 | 3 次失败后上报，绝不静默重试 |
+| 护栏捕获 | 将已解决的失败转化为 Known Pitfalls |
+| 上下文恢复 | 渐进式展开：docs/ → 任务文件 → progress |
+| 定期自检 | 每 ~10 次工具调用检查是否偏离计划 |
+| Doc-Code 同步 | Dev 代码变更时更新 docs/；reviewer 验证 |
+| 阶段健康检查 | 阶段边界时检查文档新鲜度、过期任务、索引完整性 |
+| 假设审查 | 模型升级或回顾时审查每个 Harness 组件是否仍然承重 |
+| 评审维度 | Reviewer 按项目特定的质量维度评分，配合校准锚点 |
+| 升级判断 | Dev 分类决策：自己定 vs 带方案问 team-lead |
+| 任务确认 | Dev 大任务前先读懂上下文，向 team-lead 确认理解后开工 |
+| 品味捕获 | 记录用户风格偏好；出现 3+ 次后编码为自动化检查 |
+| 黄金原则 CI | 预置检查自动运行；custodian 随时间添加项目特定检查 |
 
-### Assumption Audit (Harness Evolution)
+### 假设审查（Harness 演进）
 
-Inspired by Anthropic's insight that "every harness component encodes an assumption about what the model cannot do well on its own." At phase boundaries or model upgrades, team-lead runs an Assumption Audit — reviewing each mechanism (task folders, 3-Strike, context recovery, reviewer pass, etc.) to determine if it's still load-bearing. Components that triggered fewer than 2 times in the last phase and whose removal wouldn't have caused quality drops are candidates for simplification. **Principle**: the interesting harness combinations don't shrink as models improve — they move.
+受 Anthropic 的洞察启发——"每个 Harness 组件都编码了一个关于模型能力不足的假设"。在阶段边界或模型升级时，team-lead 运行假设审查——逐一检查每个机制（task folder、3-Strike、上下文恢复、reviewer 审查等）是否仍然承重。如果某个组件在上一阶段触发不到 2 次，且去掉它不会导致质量下降，则列为简化候选。**原则**：有趣的 Harness 组合不会随模型进步而缩小——而是移动。
 
-### Dev Escalation Judgment
+### Dev 升级判断
 
-Dev agents are not purely mechanical executors. They classify decisions into two levels:
-- **Decide yourself** — implementation details, test strategy, tool choices within established patterns
-- **Must ask team-lead** — ambiguous requirements, scope explosion, architecture impact, irreversible choices (API shape, DB schema)
+Dev 智能体不是纯粹的机械执行者。他们将决策分为两级：
+- **自己决定** — 实现细节、测试策略、已建立模式内的工具选择
+- **必须问 team-lead** — 需求模糊、范围爆炸、架构影响、不可逆选择（API 形态、数据库 schema）
 
-When escalating, devs must include options and a recommendation — never bare questions. This prevents both silent derailment (going off track without asking) and excessive interruption (asking about every detail).
+升级时，dev 必须带着选项和推荐方案提问——绝不空手提问。这既防止了静默跑偏（不问就走歪），也防止了过度打扰（事事都问）。
 
-### Task Confirmation (Sprint Contract)
+### 任务确认（Sprint Contract）
 
-For large tasks, dev agents first read and understand the full context — referenced planning files, relevant source code, existing architecture — then confirm their understanding with team-lead before starting. If team-lead's dispatch message is missing document setup info, the dev reminds them. Inspired by the sprint contract pattern from Anthropic's research, where generator and evaluator negotiate "what done looks like" before any code is written.
+对于大任务，dev 智能体先读懂完整上下文——引用的规划文件、相关源代码、现有架构——然后向 team-lead 确认理解后才开工。如果 team-lead 的任务消息缺少文档设置信息，dev 会主动提醒。灵感来自 Anthropic 研究中的 Sprint Contract 模式——生成器和评估器在写任何代码之前先协商"完成标准长什么样"。
 
-### Living CLAUDE.md
+### 活文档 CLAUDE.md
 
-CLAUDE.md is not a one-time generation — it's a **living document** that evolves with the project. Updated when failure patterns are captured, team roster changes, or new protocols are established.
+CLAUDE.md 不是一次性生成物——它是一份**活文档**，随项目演进。当捕获到失败模式、团队名单变动或建立新协议时更新。
 
-## Known Limitation: Teammate Context Cannot Be Compacted
+## 已知限制：团队成员无法压缩上下文
 
-With **200k context** (default), teammates auto-compact when context fills up — this works fine and requires no special handling.
+使用 **200k 上下文**（默认）时，团队成员会在上下文满时自动压缩——这种情况下没有问题。
 
-With **1M context**, teammates **cannot auto-compact** and cannot run `/compact` manually. As context grows, performance degrades and costs increase significantly — yet the extra context often provides diminishing returns.
+使用 **1M 上下文**时，团队成员**无法自动压缩**，也不能手动运行 `/compact`。随着上下文增长，性能显著下降且成本大幅增加——但额外的上下文往往收益递减。
 
-**Recommendation**: Use 200k context (default) for team projects. If you do use 1M context and notice slowdowns:
+**建议**：团队项目使用 200k 上下文（默认）。如果你使用了 1M 上下文并发现变慢：
 
-1. Exit Claude Code completely (`Ctrl+C` or `/exit`)
-2. Resume with `claude --continue`
-3. Team-lead reads `.plans/` files to restore project state (CLAUDE.md is auto-loaded)
-4. Re-spawn teammates — they start fresh with clean context and re-read their own `.plans/` files for recovery
+1. 完全退出 Claude Code（`Ctrl+C` 或 `/exit`）
+2. 用 `claude --continue` 恢复会话
+3. Team-lead 读取 `.plans/` 文件恢复项目状态（CLAUDE.md 会自动加载）
+4. 重新生成团队成员——它们以干净的上下文启动，通过读取各自的 `.plans/` 文件恢复工作进度
 
-This is a Claude Code platform limitation, not a CCteam-creator issue. All agent progress is persisted in `.plans/` files, so no work is lost on restart.
+这是 Claude Code 平台的限制，不是 CCteam-creator 的问题。所有工作进度都持久化在 `.plans/` 文件中，重启不会丢失任何工作。
 
-## Updating
+## 更新
 
-Third-party Claude Code marketplaces do **not** auto-update by default, so newly-pushed CCteam-creator versions won't reach installed users automatically. This skill has a built-in **Step 0 Update Check** that runs each time CCteam-creator is triggered — it silently fetches the latest `plugin.json` version from GitHub and notifies you (one line, no confirmation needed) if a newer version is available.
+Claude Code 的第三方 marketplace **默认不自动更新**，所以新推送的 CCteam-creator 版本不会自动到达已安装的用户。本 skill 内置了 **Step 0 Update Check**——每次触发 CCteam-creator 时都会静默从 GitHub 拉最新的 `plugin.json` 版本号并对比本地,如发现新版会打一行通知(不需要确认)。
 
-**To actually install the newer version** after seeing the notification:
+**看到通知后如何实际安装新版**:
 
 ```bash
 /plugin marketplace update ccteam
 /exit
-# restart Claude Code
+# 然后重启 Claude Code
 ```
 
-If `/plugin marketplace update` reports no changes despite a new version being published (known upstream bug: [anthropics/claude-code#31462](https://github.com/anthropics/claude-code/issues/31462)), force a fresh clone:
+如果 `/plugin marketplace update` 报告"没有变化"但确实有新版(已知上游 bug:[anthropics/claude-code#31462](https://github.com/anthropics/claude-code/issues/31462)),强制重新拉取:
 
 ```bash
 /plugin marketplace remove ccteam
-/plugin marketplace add jessepwj/CCteam-creator
+/plugin marketplace add beerui/CCteam-creator
 /plugin install CCteam-creator@ccteam
 ```
 
-For users on the manual-install path (`git clone` + `cp -r`), simply pull the latest:
+对于手动安装的用户(`git clone` + `cp -r`),直接 pull 最新:
 
 ```bash
-cd <your-clone-location>
+cd <你的 clone 位置>
 git pull
 
-# English
+# 英文版
 cp -r skills/CCteam-creator ~/.claude/skills/CCteam-creator
 
-# Or Chinese
+# 或中文版
 cp -r cn/skills/CCteam-creator-cn ~/.claude/skills/CCteam-creator-cn
 ```
 
-## Known Limitation: Team-lead May "Lose Memory" After Compaction
+## 已知限制：Team-lead 压缩后可能"失忆"
 
-After the main conversation runs `/compact`, team-lead sometimes forgets teammate names, operational protocols, and current project context — manifesting as not knowing which teammates exist, forgetting how to dispatch tasks, or losing track of which phase it's in.
+当主会话执行 `/compact` 后，team-lead 有时会忘记团队成员、运营协议和当前项目上下文——表现为不知道有哪些队友、不记得该怎么分配任务、忘记阶段在哪一步。
 
-**Why this happens**:
+**为什么会这样**：
 
-- CLAUDE.md is injected **once at session start**, **not re-loaded every turn**
-- The compactor rewrites history (including the team roster, SKILL.md protocols, and onboarding prompts) into a summary — details can be lost
-- `team-snapshot.md` still exists on disk, but the amnesiac lead doesn't know it should go read it
+- CLAUDE.md 只在**会话启动时**注入一次，**不是每轮重新加载**
+- 压缩器会把历史消息（包括团队花名册、SKILL.md 协议、入职 prompt）重写成摘要，细节可能丢失
+- 磁盘上的 `team-snapshot.md` 仍然存在，但 lead 压缩后不知道自己需要去读它
 
-**One-sentence rescue**:
+**一句话救援**：
 
-If you notice the lead is confused after compaction, just tell it:
+如果发现 lead 压缩后状态混乱，直接对它说：
 
-> **"Read `.plans/<project>/team-snapshot.md` to restore team state"**
+> **"读 `.plans/<项目名>/team-snapshot.md` 恢复团队状态"**
 
-This makes team-lead reload the full team roster and all onboarding prompts, returning to a working state immediately. All progress is in `.plans/` files — compaction loses zero actual work; it only loses "the lead's operational memory in its head", and that memory has a full copy on disk.
+这会让 team-lead 重新加载完整的团队花名册和所有入职 prompt，立刻回到工作状态。所有进度都在 `.plans/` 文件里——压缩不会丢失任何实际工作，丢的只是"lead 脑子里的运营记忆"，而这些记忆在磁盘上都有完整副本。
 
-> After setup finishes, the skill will proactively remind you of this before guiding you through `/compact`. For first-time users, memorizing this one sentence is enough.
+> 搭建完成后,skill 会在引导 `/compact` 之前主动提醒这一点。如果你是首次使用,记住这一句话就够了。
 
-## Project Structure
+## 项目结构
 
 ```
 CCteam-creator/
   .claude-plugin/
-    marketplace.json              -- Marketplace catalog
-    plugin.json                   -- English plugin metadata
+    marketplace.json              -- Marketplace 目录
+    plugin.json                   -- 英文插件元数据
   skills/
-    CCteam-creator/               -- English skill
+    CCteam-creator/               -- 英文技能
       SKILL.md
       scripts/
-        golden_rules.py           -- Pre-installed universal code health checks
+        golden_rules.py           -- 预置通用代码健康检查
       references/
         roles.md / onboarding.md / templates.md
-  cn/                             -- Chinese variant
+  cn/                             -- 中文变体
     .claude-plugin/plugin.json
     skills/
       CCteam-creator/
@@ -526,21 +520,21 @@ CCteam-creator/
           golden_rules.py
         references/
           roles.md / onboarding.md / templates.md
-  docs/images/                    -- Screenshots
-  README.md / README_CN.md
+  docs/images/                    -- 截图
+  README.md
   LICENSE
 ```
 
 ## Star History
 
-<a href="https://star-history.com/#jessepwj/CCteam-creator&Date">
+<a href="https://star-history.com/#beerui/CCteam-creator&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jessepwj/CCteam-creator&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=jessepwj/CCteam-creator&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=jessepwj/CCteam-creator&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=beerui/CCteam-creator&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=beerui/CCteam-creator&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=beerui/CCteam-creator&type=Date" />
  </picture>
 </a>
 
-## License
+## 许可证
 
 MIT
