@@ -90,7 +90,7 @@ Expected: spec 文件存在，git log 看到 spec 提交。
 - **Name**: `bug-triage`
 - **subagent_type**: `general-purpose`
 - **model**: `sonnet`
-- **MCP 依赖**: `zentao-mcp` 和 `alibabacloud-api-mcp-server`（用于 ARMS）
+- **MCP 依赖**: `zentao-mcp-server` 和 `mcp-server-aliyun-observability`（用于 ARMS）
 - **角色定位**: 外部世界 ↔ CCteam 之间的"翻译官"——只读外部系统数据、只写 intake 文件，**不碰项目源代码**
 - **核心职责**:
   1. **拉单**: 收到 trigger（`{source: zentao|arms, id: <bug-id|trace-id>}`）后，调用对应 MCP 拉取原始数据
@@ -548,8 +548,8 @@ These let team-lead and bug-triage work consistently across sessions."
 | MCP | 用途 | 必须 vs 可选 |
 |-----|------|-------------|
 | `alibabacloud-devops-mcp-server` (云效) | dev 提 MR 到 Codeup | 启用 Codeup 集成时必须 |
-| `@tytt/zentao-mcp` (禅道) | bug-triage 拉禅道 Bug 单 | 启用禅道触发源时必须 |
-| `alibabacloud-api-mcp-server` (阿里云 OpenAPI) | bug-triage 查 ARMS 错误事件 | 启用 ARMS 巡检时必须 |
+| `zentao-mcp-server` (禅道) | bug-triage 拉禅道 Bug 单 | 启用禅道触发源时必须 |
+| `mcp-server-aliyun-observability` (阿里云观测) | bug-triage 查 ARMS 错误事件 | 启用 ARMS 巡检时必须 |
 
 ## 1. 云效 (Yunxiao) MCP
 
@@ -599,7 +599,7 @@ These let team-lead and bug-triage work consistently across sessions."
   "mcpServers": {
     "zentao": {
       "command": "npx",
-      "args": ["-y", "@tytt/zentao-mcp"],
+      "args": ["-y", "zentao-mcp-server"],
       "env": {
         "ZENTAO_URL": "https://zentao.your-company.com",
         "ZENTAO_ACCOUNT": "<用户名>",
@@ -617,7 +617,11 @@ These let team-lead and bug-triage work consistently across sessions."
 
 主对话: "用 zentao 工具列出最近的 5 个 bug"。
 
-## 3. 阿里云 OpenAPI MCP（用于 ARMS）
+## 3. 阿里云观测 (Observability) MCP（用于 ARMS）
+
+> **前置依赖**: 安装 [uv](https://github.com/astral-sh/uv)——此 MCP 是 Python 包，通过 `uvx` 运行：
+> `curl -LsSf https://astral.sh/uv/install.sh | sh`
+> 验证: `uvx --version`
 
 ### 3.1 准备 AccessKey
 
@@ -630,24 +634,24 @@ These let team-lead and bug-triage work consistently across sessions."
 ```json
 {
   "mcpServers": {
-    "aliyun-api": {
-      "command": "npx",
-      "args": ["-y", "@alibabacloud/api-mcp-server"],
+    "aliyun-observability": {
+      "command": "uvx",
+      "args": ["mcp-server-aliyun-observability", "--transport", "stdio"],
       "env": {
         "ALIBABA_CLOUD_ACCESS_KEY_ID": "<你的 AK ID>",
         "ALIBABA_CLOUD_ACCESS_KEY_SECRET": "<你的 AK Secret>",
-        "ALIBABA_CLOUD_REGION": "cn-hangzhou"
+        "ALIBABA_CLOUD_REGION_ID": "cn-hangzhou"
       }
     }
   }
 }
 ```
 
-> 包名 `@alibabacloud/api-mcp-server` 以官方仓库 `aliyun/alibabacloud-api-mcp-server` README 为准，配置前请到 https://github.com/aliyun/alibabacloud-api-mcp-server 确认最新 npm 包名和 env 变量名。
+> **已验证可用**: PyPI 包 `mcp-server-aliyun-observability` v1.0.8+——覆盖 ARMS / SLS / 应用实时监控。最新版本见 https://pypi.org/project/mcp-server-aliyun-observability/。
 
 ### 3.3 验证连通
 
-主对话: "用 aliyun-api 工具查询 ARMS 应用列表，region cn-hangzhou"。
+主对话: "用 aliyun-observability 工具查询 ARMS 应用列表，region cn-hangzhou"。
 
 ## 4. Codeup git remote 配置
 
@@ -748,7 +752,7 @@ remote setup. FAQ for common confusion points."
 | 集成项 | 校验方法 |
 |--------|---------|
 | 禅道 | 让用户运行 `cat ~/.claude/mcp.json \| grep zentao`；或主对话里说"列出 zentao 工具"看是否返回工具列表 |
-| ARMS | 同上，查 aliyun-api MCP |
+| ARMS | 同上，查 aliyun-observability MCP |
 | Codeup | 1. 同上查 yunxiao MCP；2. `git -C <project> remote -v` 看是否有 codeup 远程 |
 
 **任一项缺失** → 停在此步，引用 `references/mcp-setup.md`，让用户先装好再回来继续。**绝不**在缺失依赖的情况下创建团队，否则 bug-triage 会立刻失败。
@@ -1574,12 +1578,12 @@ Expected: tag 存在；show 显示 release message。
 
 **Placeholder scan**:
 - 唯一未填充的占位是 `plugin.json` 的 `homepage` 字段——spec 明确说"远程仓库地址定后填"，是已知 deferred item，不算 placeholder
-- ARMS MCP 包名 `@alibabacloud/api-mcp-server` 在 mcp-setup.md 标注了"以官方仓库 README 为准"——这是因为 npm 名称可能与仓库目录名不同步，让用户确认是合理的边界处理
+- ARMS MCP 已确认使用 PyPI 包 `mcp-server-aliyun-observability`（v1.0.8+），通过 `uvx` 启动；env 变量 `ALIBABA_CLOUD_REGION_ID`（注意 _ID 后缀）
 
 **Type/naming consistency**:
 - intake 状态机 6 状态在所有出现位置（roles.md / templates.md / docs/intake-protocol.cn.md / spec）一致
 - last-scan.txt 路径 `.plans/<project>/bug-triage/last-scan.txt` 全文一致
-- MCP 包名: `alibabacloud-devops-mcp-server` (云效) / `@tytt/zentao-mcp` (禅道) / `alibabacloud-api-mcp-server` (阿里云)，全文一致
+- MCP 包名: `alibabacloud-devops-mcp-server` (云效) / `zentao-mcp-server` (禅道) / `mcp-server-aliyun-observability` (阿里云观测)，全文一致
 - Step 编号 1.2.1/1.2.2/1.2.3 全文一致
 
 **Scope check**:

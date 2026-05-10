@@ -149,7 +149,7 @@ For each integration item the user said "yes" to, validate the MCP is configured
 | Integration | Validation method |
 |-------------|-------------------|
 | Zentao | Have user run `cat ~/.claude/mcp.json \| grep zentao`; or in main chat say "list zentao tools" and check the returned tool list |
-| ARMS | Same as above, check aliyun-api MCP |
+| ARMS | Same as above, check aliyun-observability MCP |
 | Codeup | 1. Same as above, check yunxiao MCP; 2. `git -C <project> remote -v` to check codeup remote |
 
 **Any item missing** → stop here, reference `references/mcp-setup.md`, have the user install before continuing. **Never** create the team with missing dependencies — bug-triage will fail immediately.

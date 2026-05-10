@@ -59,7 +59,7 @@
 | subagent_type | `general-purpose` |
 | model | `sonnet` |
 | 写入权限 | 仅 `.plans/<project>/bug-triage/` 和 `.plans/<project>/intake/` |
-| MCP 依赖 | `zentao-mcp`、`alibabacloud-api-mcp-server`（用于 ARMS） |
+| MCP 依赖 | `zentao-mcp-server`、`mcp-server-aliyun-observability`（用于 ARMS） |
 | 角色定位 | 外部世界 ↔ CCteam 之间的"翻译官"——只读、只写 intake 文件，不碰源代码 |
 
 ### 2.2 核心职责
@@ -524,9 +524,9 @@ CCteam-creator/                              ← 当前目录，fork 本体
 
 | 项 | 操作 | 验证 |
 |----|------|------|
-| zentao MCP | `npx -y @tytt/zentao-mcp` 配置到 ~/.claude/mcp.json，env 填 ZENTAO_URL/ACCOUNT/PASSWORD | claude 启动后可见 zentao 工具 |
+| zentao MCP | `npx -y zentao-mcp-server` 配置到 ~/.claude/mcp.json，env 填 ZENTAO_URL/ACCOUNT/PASSWORD | claude 启动后可见 zentao 工具 |
 | yunxiao MCP | `npx -y alibabacloud-devops-mcp-server` 配置，env 填 YUNXIAO_ACCESS_TOKEN | 同上 |
-| aliyun-api MCP (for ARMS) | 装 `alibabacloud-api-mcp-server`，配 AccessKey + RAM 权限（最少 ARMS 只读） | 同上 |
+| aliyun-observability MCP (for ARMS) | 装 `mcp-server-aliyun-observability` (PyPI, `uvx` 启动)，配 AccessKey + RAM 权限（最少 ARMS 只读） | 同上 |
 | Codeup git remote | `git remote add origin https://codeup.aliyun.com/<org>/<repo>.git` 并配 SSH key 或 HTTPS 凭证 | `git push --dry-run` 不报错 |
 
 详细安装与连通性自检脚本见 `references/mcp-setup.md`（一期交付物）。

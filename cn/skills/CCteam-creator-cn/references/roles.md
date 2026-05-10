@@ -183,7 +183,7 @@ team-lead 负责捕获用户的品味/风格偏好：
 - **名称**: `bug-triage`
 - **subagent_type**: `general-purpose`
 - **model**: `sonnet`
-- **MCP 依赖**: `zentao-mcp` 和 `alibabacloud-api-mcp-server`（用于 ARMS）
+- **MCP 依赖**: `zentao-mcp-server` 和 `mcp-server-aliyun-observability`（用于 ARMS）
 - **角色定位**: 外部世界 ↔ CCteam 之间的"翻译官"——只读外部系统数据、只写 intake 文件，**不碰项目源代码**
 - **核心职责**:
   1. **拉单**: 收到 trigger（`{source: zentao|arms, id: <bug-id|trace-id>}`）后，调用对应 MCP 拉取原始数据

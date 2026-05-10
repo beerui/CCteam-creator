@@ -150,7 +150,7 @@ Read references/roles.md
 | 集成项 | 校验方法 |
 |--------|---------|
 | 禅道 | 让用户运行 `cat ~/.claude/mcp.json \| grep zentao`；或主对话里说"列出 zentao 工具"看是否返回工具列表 |
-| ARMS | 同上，查 aliyun-api MCP |
+| ARMS | 同上，查 aliyun-observability MCP |
 | Codeup | 1. 同上查 yunxiao MCP；2. `git -C <project> remote -v` 看是否有 codeup 远程 |
 
 **任一项缺失** → 停在此步，引用 `references/mcp-setup.md`，让用户先装好再回来继续。**绝不**在缺失依赖的情况下创建团队，否则 bug-triage 会立刻失败。

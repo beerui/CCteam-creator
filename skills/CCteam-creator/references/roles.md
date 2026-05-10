@@ -183,7 +183,7 @@ team-lead is responsible for capturing user taste/style preferences:
 - **Name**: `bug-triage`
 - **subagent_type**: `general-purpose`
 - **model**: `sonnet`
-- **MCP Dependencies**: `zentao-mcp` and `alibabacloud-api-mcp-server` (for ARMS)
+- **MCP Dependencies**: `zentao-mcp-server` and `mcp-server-aliyun-observability` (for ARMS)
 - **Role positioning**: Translator between the external world and CCteam — read-only on external system data, write-only to intake files, **never touches project source code**
 - **Core Responsibilities**:
   1. **Pull ticket**: On receiving trigger (`{source: zentao|arms, id: <bug-id|trace-id>}`), call the corresponding MCP to fetch raw data
