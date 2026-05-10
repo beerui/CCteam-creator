@@ -247,6 +247,57 @@ Typical template-level changes:
 - task/finding/progress conventions
 - rebuild timing rules
 
+## Intake Processing Protocol
+
+> Only enabled when the team includes a bug-triage role.
+
+After every main session start / compact recovery, team-lead **MUST**:
+
+1. Check whether `.plans/<project>/intake/` exists
+2. List all intake files with `status: pending` (via grep or reading frontmatter)
+3. Brief the user concisely:
+   ```
+   Found <N> new intakes pending decision:
+   - intake/zentao-12345.md  [P1] <one-liner>
+   - intake/arms-trace-abc.md [P2] <one-liner>
+   Want me to walk through them and propose a recommendation?
+   ```
+4. The four user-decision paths:
+   - **Accept**: Create `.plans/<project>/<dev>/<source>-<id>/` task folder, update intake `status: accepted` + `assigned_to` + `task_path`, SendMessage to dev
+   - **Reject**: Update `status: rejected` + `reject_reason`, file kept for audit
+   - **Merge**: Append intake content into the existing task's findings.md, update `status: merged` + `merged_into`
+   - **Defer**: Keep `pending`, decide in next session
+5. After processing, give the user a one-line summary (accepted N / rejected M / deferred K)
+
+### Intake state machine
+
+```
+pending ──accept──→ accepted ──dev completes MR──→ in_review ──human merge──→ done
+   │                                                     │
+   ├──reject──→ rejected (terminal)                      ├──MR rejected/closed──→ rejected (terminal)
+   │
+   ├──merge──→ merged (terminal, merged_into points to the real task)
+   │
+   └──defer──→ stays pending
+```
+
+### Archive policy
+
+- Terminal-state intakes (`done` / `rejected` / `merged`) are **kept** for audit
+- Terminal intakes older than 30 days are moved monthly by custodian to `.plans/<project>/intake/_archive/`
+- Small teams without custodian: when intake/ exceeds 50 files, team-lead proposes a one-shot archive
+
+## ARMS Scan Config
+
+> Filled in only when SKILL.md Step 1.2.3 enabled ARMS scheduled scan.
+
+- **schedule**: `0 9 * * *` (cron expression, modifiable)
+- **project_id**: `<ARMS project identifier>`
+- **severity_threshold**: P0 + P1 (modifiable)
+- **CronCreate task ID**: `<filled in after creation>`
+
+For scan trigger paths and parameter details, see SKILL.md § Intake Processing Protocol and docs/intake-protocol.md.
+
 ## File Structure
 
 ```
@@ -1035,4 +1086,56 @@ to Agent() during initial setup. No abbreviation.>
 
 (one section per agent in the roster)
 ```
+
+## Intake File Template
+
+Used by bug-triage when writing a new intake file. Path: `.plans/<project>/intake/<source>-<external_id>.md`.
+
+```markdown
+---
+source: zentao | arms
+external_id: 12345 | trace-abc123
+severity: P0 | P1 | P2 | P3
+created_at: 2026-05-10T10:30:00+08:00
+status: pending
+external_link: https://zentao.example.com/bug-12345
+---
+
+## Symptom
+[one sentence]
+
+## Repro Steps / Stack Trace
+[Zentao reproduction steps OR ARMS stack + trace]
+
+## Impact Scope
+[affected users / endpoints / features]
+
+## Suspected Code Modules (triage's guess)
+- src/auth/login.ts:42
+- src/middleware/session.ts
+
+## Suggested Fix Directions
+[1-2 starting points so dev doesn't begin from zero]
+
+## Raw Data
+[full Zentao bug fields / ARMS error event JSON]
+```
+
+### Fields appended on later state transitions
+
+When state evolves from pending, team-lead/dev appends to frontmatter:
+
+- `assigned_to: <agent-name>` (on accept)
+- `task_path: .plans/<project>/<dev>/<source>-<id>/` (on accept)
+- `mr_url: <url>` (on in_review)
+- `merged_into: <existing-task-path>` (on merge)
+- `reject_reason: <one-liner>` (on reject)
+
+### last-scan.txt format
+
+Maintained by bug-triage. Path: `.plans/<project>/bug-triage/last-scan.txt`.
+- Single line
+- ISO timestamp with timezone, e.g. `2026-05-10T15:30:42+08:00`
+- Overwritten after every successful scan
+- Used as the default `since` parameter for the next scan
 
