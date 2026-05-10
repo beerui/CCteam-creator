@@ -6,6 +6,18 @@
 
 [English](./README.md) | [中文](./README_CN.md)
 
+> Based on [jessepwj/CCteam-creator](https://github.com/jessepwj/CCteam-creator) v1.4.3, extended with Aliyun ecosystem integration (Yunxiao Codeup MR auto-submission / Zentao bug intake / ARMS error monitoring).
+
+## What's New in 0.1.0
+
+- **`bug-triage` role**: pulls Zentao bugs / ARMS error events → writes them to `.plans/<project>/intake/` candidate pool
+- **dev MR auto-submission**: after review passes, auto git push + Yunxiao MCP creates the MR
+- **`/ccteam-scan` slash command**: trigger an immediate scan
+- **CronCreate scheduled scan**: by default sweeps ARMS errors daily at 9:00
+- **Intake Processing Protocol**: 6-state machine + team-lead proactive briefing
+
+See the [design doc](docs/superpowers/specs/2026-05-10-ccteam-aliyun-design.md), the [implementation plan](docs/superpowers/plans/2026-05-10-ccteam-aliyun-impl.md), and the [intake user manual](docs/intake-protocol.md).
+
 ## Standing on the Shoulders of Giants
 
 CCteam-creator is built upon outstanding open-source projects and engineering practices:

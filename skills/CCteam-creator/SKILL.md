@@ -33,7 +33,7 @@ Do NOT delegate this to a subagent (Explore, general-purpose, etc.). Subagents r
 
 **Step 0 Update Check (auto)**: Background version fetch + one-line notification if newer version exists
 **Step 0 Detect (auto)**: Check if `.plans/` exists → if yes, offer to resume existing project
-1. **Requirements Consultation** — Introduce the team mechanism to the user and gather requirements
+1. **Requirements Consultation** — Introduce the team mechanism to the user and gather requirements; **if Aliyun ecosystem integration is enabled, sub-steps 1.2.1/1.2.2/1.2.3 will be triggered**
 2. **Confirm the Plan** — Summarize requirements and let the user confirm the team configuration
 3. Create planning files (including per-agent subdirectories)
 4. Create the team + spawn agents
@@ -129,6 +129,48 @@ After the introduction, learn the following through conversation:
 
 **Note**: Do not fire all questions at once. Follow up naturally based on the user's answers, like a normal conversation. If the user's requirements are already clear, you may skip some questions.
 
+### 1.2.1 External System Integration (when applicable)
+
+Ask the user three questions (in natural conversation, no need to recite verbatim):
+
+1. Do you need to pull bug tickets from Zentao as development input?
+2. Do you need to pull error events from ARMS as development input?
+3. Do you need dev to push code to Yunxiao Codeup + auto-create MR?
+
+> **Judgment guidance**: If the user mentioned "internal use", "company is on Aliyun", or "integrate with existing DevOps flow" in 1.2, proactively raise these three questions; otherwise, scan briefly and gauge attitude.
+
+Any "yes" → proceed to 1.2.2 to validate corresponding MCP is in place.
+All "no" → skip 1.2.2 / 1.2.3, follow upstream standard flow into 1.3.
+
+### 1.2.2 MCP Validation (only when any 1.2.1 answer is "yes")
+
+For each integration item the user said "yes" to, validate the MCP is configured:
+
+| Integration | Validation method |
+|-------------|-------------------|
+| Zentao | Have user run `cat ~/.claude/mcp.json \| grep zentao`; or in main chat say "list zentao tools" and check the returned tool list |
+| ARMS | Same as above, check aliyun-api MCP |
+| Codeup | 1. Same as above, check yunxiao MCP; 2. `git -C <project> remote -v` to check codeup remote |
+
+**Any item missing** → stop here, reference `references/mcp-setup.md`, have the user install before continuing. **Never** create the team with missing dependencies — bug-triage will fail immediately.
+
+### 1.2.3 Enable ARMS Scheduled Scan (only when 1.2.1 selected ARMS)
+
+Ask the user:
+
+- Do you want to auto-scan ARMS errors daily and write intakes?
+- Schedule: default `0 9 * * *` (daily 9:00), modifiable
+- ARMS project ID: copy from ARMS console
+- Severity threshold: default P0 + P1 (user can broaden to P2)
+
+If enabled:
+
+1. Use `CronCreate` to create the task (parameters in references/templates.md § ARMS Scan Config)
+2. Write the config to the about-to-be-generated CLAUDE.md (in Step 3.5)
+3. Save the CronCreate-returned task ID into CLAUDE.md so the user can manage it later
+
+If not enabled → skip; user can only trigger via manual `/ccteam-scan`.
+
 ### 1.3 Recommend a Team Configuration
 
 Based on the user's needs, recommend an appropriate combination of roles. Explain each role's purpose and why you're recommending it.
@@ -142,6 +184,7 @@ Available standard roles (software development):
 | Backend Dev | backend-dev | tdd-guide | sonnet | Write code + TDD + large tasks split into task folders |
 | Frontend Dev | frontend-dev | tdd-guide | sonnet | Write code + TDD + large tasks split into task folders |
 | Explorer/Researcher | researcher | — | sonnet | Code search + web research + read-only (no code edits) |
+| Bug Triage | bug-triage | — | sonnet | Pull external Bug/Error data → write intake, read-only on code (recommended only when 1.2.1 selected Zentao or ARMS) |
 | E2E Tester | e2e-tester | e2e-runner | sonnet | E2E testing + browser automation + bug tracking |
 | Code Reviewer | reviewer | code-reviewer | sonnet | Read-only review + deep security/quality/performance checks |
 | Custodian | custodian | refactor-cleaner | sonnet | Constraint compliance + doc governance + pattern→automation + code cleanup |
@@ -160,6 +203,7 @@ See [references/roles.md](references/roles.md) for detailed role definitions and
   - Name by number (`researcher-1`/`researcher-2`) for volume splits, by focus (`researcher-api`/`researcher-arch`) for direction splits. Each gets its own `.plans/` directory. No race conditions — researchers are read-only on source code
   - **Anti-pattern**: Do NOT split when direction B depends on A's output (e.g., "first determine auth approach, then research libraries for it") — a single researcher sequentially is faster than two in a blocking chain
 - **custodian is recommended for teams with 4+ agents or long-running projects**. For small teams (2-3 agents), custodian overhead may not be worth it — team-lead can absorb the compliance checks directly
+- **bug-triage is recommended only when 1.2.1 enabled Zentao or ARMS integration** — it's a downstream of 1.2.1; without external trigger sources it becomes an idle role. MCPs being in place is a hard precondition
 - Users can add custom roles (explain that custom roles require: name, responsibilities, model choice)
 
 **Adapting for Non-Software Projects**:
@@ -433,6 +477,7 @@ This warning **must** be delivered before guiding `/compact` — otherwise the u
 - **Assumption audit**: Every harness component encodes an assumption about what the model cannot do well on its own. These assumptions go stale as models improve. At major model upgrades or when a mechanism repeatedly adds no value, team-lead should run the Assumption Audit (see CLAUDE.md Harness Checklist) and simplify what is no longer load-bearing. Principle: find the simplest solution possible, only increase complexity when needed
 - **Large task plan-first**: For tasks spanning 3+ agents or 5+ tool calls, team-lead MUST write `.plans/<project>/session-<N>-<topic>-plan.md` (goal / solution / params / task split / dispatch order / rollback) BEFORE any SendMessage. Dispatch messages reference plan sections only — no re-explaining context inline, no dispatch-while-thinking
 - **Delegate everything delegable**: team-lead does NOT self-execute commits / push / SSH inspection / file cleanup / deploy script runs — these go to backend-dev (or the appropriate role). team-lead only does decisions, cross-repo coordination, un-delegatable local actions (KP-1 restarts, etc.), and custodian dispatch
+- **External integration gates**: Projects with Zentao/ARMS/Codeup integration enabled MUST pass Step 1.2.2 MCP validation before setup proceeds; any missing dependency blocks progress, otherwise bug-triage and dev MR flow will fail at runtime
 
 ## Team-Lead Operations Guide
 
