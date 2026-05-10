@@ -259,6 +259,57 @@ Team-lead 在阶段边界检查（不是每个任务都查）：
 - 任务/发现/进度约定
 - 重建时机规则
 
+## Intake Processing Protocol
+
+> 仅当团队包含 bug-triage 角色时启用本节。
+
+每次主会话启动 / compact 恢复后，team-lead **必须**:
+
+1. 检查 `.plans/<project>/intake/` 目录是否存在
+2. 列出所有 `status: pending` 的 intake 文件（用 grep 或读 frontmatter）
+3. 用一段简洁汇报告诉用户:
+   ```
+   发现 <N> 个新 intake 待决策：
+   - intake/zentao-12345.md  [P1] <一句话>
+   - intake/arms-trace-abc.md [P2] <一句话>
+   要我现在过一遍并提建议吗？
+   ```
+4. 用户决策的 4 条路径:
+   - **Accept**: 创建 `.plans/<project>/<dev>/<source>-<id>/` task 文件夹，更新 intake `status: accepted` + `assigned_to` + `task_path`，SendMessage 派给 dev
+   - **Reject**: 更新 `status: rejected` + `reject_reason`，文件保留供审计
+   - **Merge**: 把 intake 内容追加到已有 task 的 findings.md，更新 `status: merged` + `merged_into`
+   - **Defer**: 保持 `pending`，下次会话再决策
+5. 处理完后，给用户一行总结（accepted N / rejected M / deferred K）
+
+### intake 状态机
+
+```
+pending ──accept──→ accepted ──dev完成MR──→ in_review ──人工合入──→ done
+   │                                              │
+   ├──reject──→ rejected (终态)                   ├──MR 被拒/关闭──→ rejected (终态)
+   │
+   ├──merge──→ merged (终态，merged_into 指向真正的 task)
+   │
+   └──defer──→ 保持 pending
+```
+
+### 归档策略
+
+- 终态 intake (`done` / `rejected` / `merged`) **保留** 供审计
+- 超过 30 天的终态 intake 由 custodian 月度移到 `.plans/<project>/intake/_archive/`
+- 没装 custodian 的小团队: team-lead 看到 intake/ 文件超过 50 个时，一次性提议归档
+
+## ARMS 巡检配置
+
+> 仅当 SKILL.md Step 1.2.3 启用了 ARMS 巡检时填充。
+
+- **schedule**: `0 9 * * *`（cron 表达式，可改）
+- **project_id**: `<ARMS 项目标识>`
+- **severity_threshold**: P0 + P1（可改）
+- **CronCreate task ID**: `<创建后填入>`
+
+巡检触发链路、参数说明详见 SKILL.md § Intake Processing Protocol 和 docs/intake-protocol.cn.md。
+
 ## 文件结构
 
 ```
@@ -1042,4 +1093,56 @@ Response:
 
 （花名册中每个智能体一个 section）
 ```
+
+## Intake 文件模板
+
+由 bug-triage 在写新 intake 文件时使用。路径: `.plans/<project>/intake/<source>-<external_id>.md`。
+
+```markdown
+---
+source: zentao | arms
+external_id: 12345 | trace-abc123
+severity: P0 | P1 | P2 | P3
+created_at: 2026-05-10T10:30:00+08:00
+status: pending
+external_link: https://zentao.example.com/bug-12345
+---
+
+## 现象
+[一句话描述]
+
+## 重现步骤 / 错误堆栈
+[禅道里的重现步骤 OR ARMS 的堆栈+trace]
+
+## 影响范围
+[受影响用户/接口/功能]
+
+## 相关代码模块（triage 的猜测）
+- src/auth/login.ts:42
+- src/middleware/session.ts
+
+## 候选修复方向
+[1-2 个可能的入手点，让 dev 不用从零开始]
+
+## 原始数据
+[完整的禅道 Bug 字段 / ARMS 错误事件 JSON]
+```
+
+### 后续状态新增的字段
+
+当状态从 pending 演进时，team-lead/dev 在 frontmatter 追加:
+
+- `assigned_to: <agent-name>` (accept 时)
+- `task_path: .plans/<project>/<dev>/<source>-<id>/` (accept 时)
+- `mr_url: <url>` (in_review 时)
+- `merged_into: <existing-task-path>` (merge 时)
+- `reject_reason: <一句话>` (reject 时)
+
+### last-scan.txt 格式
+
+由 bug-triage 维护，路径 `.plans/<project>/bug-triage/last-scan.txt`。
+- 单行
+- ISO 时间戳带时区，例如 `2026-05-10T15:30:42+08:00`
+- 每次扫描成功完成后写入（覆盖）
+- 用于下次扫描的 `since` 参数默认值
 
