@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## 0.1.1 - 2026-05-11
+
+> Patch release: user-blocking MCP package names + doc/config gaps. No breaking changes.
+> Patch 发布：修复用户阻塞性 MCP 包名错误及多处文档/配置缺口。无破坏性变更。
+
+### Fixed / 修复
+- **MCP package names corrected** (P0, user-blocking — 0.1.0 docs would 404 on install):
+  - `@alibabacloud/api-mcp-server` (npm 404) → `mcp-server-aliyun-observability` (PyPI v1.0.8, `uvx` launch)
+  - `@tytt/zentao-mcp` (npm 404) → `zentao-mcp-server` (npm v0.1.0)
+  - env var `ALIBABA_CLOUD_REGION` → `ALIBABA_CLOUD_REGION_ID`
+  - server name `aliyun-api` → `aliyun-observability`
+
+  MCP 包名修正（P0 用户阻塞——0.1.0 文档会让用户安装时 404）。
+- **README project-structure diagram**: cn skill dir `CCteam-creator` → `CCteam-creator-cn`; references list 补全 `mcp-setup.md` (4 files, not 3).
+  README 项目结构图：cn 目录名修正 + references 补全 mcp-setup.md。
+- **Step 0 Update Check** local cache read: `cat */...plugin.json` corrupted JSON when multiple version dirs co-exist. Now `ls -t | head -1 | xargs cat` (newest by mtime).
+  Step 0 多版本 cache 时 `cat *` 破坏 JSON，改为按 mtime 取最新。
+
+### Added / 新增
+- **ARMS RUM (frontend) integration path** — mcp-setup.md § 3.4: via Aliyun OpenAPI Explorer "on-demand MCP Service" → Streamable HTTP Endpoint. Distinct from § 3.1-3.3 backend APM coverage.
+  mcp-setup.md § 3.4 新增前端 RUM 接入路径（阿里云 OpenAPI Explorer 按需打包 MCP Service → Streamable HTTP）。
+- **Zentao nginx PATH_INFO Known Pitfall** — mcp-setup.md FAQ: zentao-mcp-server 全 API 调用 302 跳登录的根因 + 给运维一行修复。
+  mcp-setup.md FAQ 加禅道 nginx PATH_INFO 已知陷阱（症状 + 根因 + nginx 修复）。
+- **1M-context sonnet spawn pitfall** — SKILL.md "Model default": team-lead 在 `[1m]` 模式下必须 spawn `opus`，sonnet 1M 当前未启用会立即 API 400。
+  SKILL.md 加 1M context sonnet spawn 陷阱：[1m] team-lead 必须 spawn opus。
+- **`scripts/validate-release.py --check-deps`** — automated check that every npm/PyPI MCP package referenced in mcp-setup.md actually exists. Catches phantom deps before commit.
+  validator --check-deps：自动验证 mcp-setup.md 引用的所有 npm/PyPI 包真实存在。
+- **`.gitignore`** baseline — ignores `.plans/`, `.claude/settings.local.json`, `__pycache__`, `.DS_Store`, IDE configs.
+  新增 .gitignore baseline。
+
+### Notes / 备注
+- Version bump from 0.1.0 ensures already-installed users get the Update Check notification on next skill trigger.
+  bump 到 0.1.1 让已装用户能收到 Update Check 通知。
+- Pure patch release: no API/structure changes; existing `.plans/` project layouts continue to work.
+  纯 patch 发布：无 API/结构变更，已有 `.plans/` 项目可继续使用。
+
 ## 0.1.0 - 2026-05-10
 
 > Forked from jessepwj/CCteam-creator v1.4.3, rebooted as 0.1.0 with Aliyun ecosystem integration.
