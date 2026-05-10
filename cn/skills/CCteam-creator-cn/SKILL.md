@@ -45,15 +45,16 @@ Read references/roles.md
 在进入任何其他步骤之前，做一次轻量的版本检查。**不需要用户同意，不要问任何问题。**
 
 1. **远程版本**：WebFetch `https://raw.githubusercontent.com/beerui/CCteam-creator/master/.claude-plugin/plugin.json`，prompt 写："What is the value of the version field? Respond with just the version string."
-2. **本地版本**：用 Bash 读本地 plugin.json（按顺序试以下路径，用第一个存在的）：
+2. **本地版本**：用 Bash 读本地 plugin.json。多个版本可能并存（如 `/plugin marketplace update` 后），取**最近修改**的那一个，避免读到旧 cache：
 
    ```bash
-   cat ~/.claude/plugins/cache/ccteam/CCteam-creator/*/.claude-plugin/plugin.json 2>/dev/null || \
-   cat ~/.claude/plugins/cache/ccteam/CCteam-creator-cn/*/.claude-plugin/plugin.json 2>/dev/null || \
+   # 按 mtime 取最新缓存，并在不同安装方式间 fallback
+   ls -t ~/.claude/plugins/cache/ccteam/CCteam-creator/*/.claude-plugin/plugin.json 2>/dev/null | head -1 | xargs cat 2>/dev/null || \
+   ls -t ~/.claude/plugins/cache/ccteam/CCteam-creator-cn/*/.claude-plugin/plugin.json 2>/dev/null | head -1 | xargs cat 2>/dev/null || \
    cat ~/.claude/skills/CCteam-creator/.claude-plugin/plugin.json 2>/dev/null
    ```
 
-   从输出中提取 version 字段。
+   从输出中提取 version 字段。（`ls -t … | head -1` 是关键——多版本并存时 `cat */...` 会把所有版本拼起来，JSON 被破坏。）
 3. **对比**：
    - **远程 ≤ 本地** 或 **WebFetch 失败** 或 **本地 plugin.json 找不到** → **完全静默** 跳过，直接进入下一步。不要打印"版本检查通过"之类的确认
    - **远程 > 本地** → 打印**一行**通知（仅一行，然后立即继续，不等用户回复）：
@@ -193,6 +194,13 @@ Read references/roles.md
 
 
 > **模型默认值**：所有角色默认使用 `sonnet`。仅在用户要求、不考虑成本、或角色涉及关键/复杂逻辑（如安全敏感审查、复杂业务逻辑）时，才将特定角色升级为 `opus`。不确定时在第 1 步与用户确认。
+>
+> **已知陷阱 — 1M context 的 team-lead 必须 spawn `opus`**（截至 2026-05 的生产验证）：
+> 如果 team-lead 自己运行在 1M context 模型变体（model identifier 以 `[1m]` 结尾，如 `claude-opus-4-7[1m]`、fast mode + 1M），所有 spawn 的子代理**必须**用 `model: "opus"`。原因：`sonnet` 1M context 在很多环境下尚未开启——spawn 后第一个 tool turn 立即 API 400。
+>
+> **症状**：子代理多次 idle notification，但磁盘零变化（不写 `progress.md`、不执行任何 tool 调用）。
+>
+> **检测**：在第 4 步 spawn 前检查 team-lead 自己的 model identifier——如果以 `[1m]` 结尾，覆盖默认：每个 `Agent`/队友 spawn 时**要么 omit `model` 继承 team-lead 的 opus，要么显式 `model: "opus"`**。这种情况下**不要**传 `model: "sonnet"`。
 
 参见 [references/roles.md](references/roles.md) 了解角色详细定义和能力。
 

@@ -44,15 +44,16 @@ Do NOT delegate this to a subagent (Explore, general-purpose, etc.). Subagents r
 Before any other step, perform a lightweight version check. **No user consent needed, do not ask any questions.**
 
 1. **Remote version**: WebFetch `https://raw.githubusercontent.com/beerui/CCteam-creator/master/.claude-plugin/plugin.json` with prompt: "What is the value of the version field? Respond with just the version string."
-2. **Local version**: Use Bash to read local plugin.json (try these paths in order, use the first that exists):
+2. **Local version**: Use Bash to read local plugin.json. Multiple versions may be cached (e.g., after `/plugin marketplace update`); pick the most recently modified one to avoid stale reads:
 
    ```bash
-   cat ~/.claude/plugins/cache/ccteam/CCteam-creator/*/.claude-plugin/plugin.json 2>/dev/null || \
-   cat ~/.claude/plugins/cache/ccteam/CCteam-creator-cn/*/.claude-plugin/plugin.json 2>/dev/null || \
+   # Pick the newest cached plugin.json by mtime, fall back across install styles
+   ls -t ~/.claude/plugins/cache/ccteam/CCteam-creator/*/.claude-plugin/plugin.json 2>/dev/null | head -1 | xargs cat 2>/dev/null || \
+   ls -t ~/.claude/plugins/cache/ccteam/CCteam-creator-cn/*/.claude-plugin/plugin.json 2>/dev/null | head -1 | xargs cat 2>/dev/null || \
    cat ~/.claude/skills/CCteam-creator/.claude-plugin/plugin.json 2>/dev/null
    ```
 
-   Extract the version field from the output.
+   Extract the version field from the output. (`ls -t … | head -1` is essential when multiple version dirs co-exist — `cat */...` would concatenate all of them and corrupt the JSON.)
 3. **Compare**:
    - **remote ≤ local**, OR **WebFetch failed**, OR **local plugin.json not found** → **completely silent**, proceed to the next step. Do NOT print "version check passed" or any confirmation noise
    - **remote > local** → print **one** notification line (just one, then immediately continue, do NOT wait for user reply):
@@ -190,6 +191,13 @@ Available standard roles (software development):
 | Custodian | custodian | refactor-cleaner | sonnet | Constraint compliance + doc governance + pattern→automation + code cleanup |
 
 > **Model default**: All roles use `sonnet`. Upgrade specific roles to `opus` only when the user requests it, cost is not a concern, or the role handles critical/complex logic (e.g., security-sensitive review, complex business logic). Ask the user during Step 1 if unsure.
+>
+> **Known Pitfall — 1M-context team-lead must spawn `opus`** (production-verified as of 2026-05):
+> If the team-lead is running on a 1M-context model variant (model identifier ends with `[1m]`, e.g., `claude-opus-4-7[1m]`, fast mode + 1M), every spawned teammate **must** use `model: "opus"`. Reason: `sonnet` 1M-context is not enabled in many environments yet — the spawn returns API 400 immediately on first tool turn.
+>
+> **Symptom**: agent shows multiple idle notifications but disk activity is zero (no `progress.md` written, no tool calls executed).
+>
+> **Detection**: check team-lead's own model identifier at Step 4 — if it ends with `[1m]`, override the default for every `Agent`/teammate spawn (either omit `model` to inherit team-lead's opus, or set `model: "opus"` explicitly). Do NOT pass `model: "sonnet"` in this case.
 
 See [references/roles.md](references/roles.md) for detailed role definitions and capabilities.
 
