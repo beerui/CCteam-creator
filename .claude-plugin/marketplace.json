@@ -1,11 +1,11 @@
 {
   "name": "ccteam",
   "owner": {
-    "name": "jessepwj"
+    "name": "motou"
   },
   "metadata": {
-    "description": "Multi-agent team orchestration plugins for Claude Code. Create parallel AI agent teams with file-based planning and role-based collaboration.",
-    "version": "1.4.3"
+    "description": "Multi-agent team orchestration plugins for Claude Code, with Aliyun ecosystem integration.",
+    "version": "0.1.0"
   },
   "plugins": [
     {

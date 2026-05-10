@@ -1,11 +1,10 @@
 {
   "name": "CCteam-creator",
-  "description": "Multi-agent team orchestration for Claude Code. Set up parallel AI agent teams with file-based planning, progress tracking, and role-based collaboration.",
-  "version": "1.4.3",
+  "description": "Multi-agent team orchestration for Claude Code, with native Aliyun ecosystem integration (Yunxiao Codeup MR / Zentao bug intake / ARMS error monitoring).",
+  "version": "0.1.0",
   "author": {
-    "name": "jessepwj"
+    "name": "motou"
   },
-  "homepage": "https://github.com/jessepwj/CCteam-creator",
   "license": "MIT",
   "keywords": [
     "claude-code",
@@ -13,6 +12,10 @@
     "multi-agent",
     "orchestration",
     "planning",
-    "skills"
+    "skills",
+    "aliyun",
+    "yunxiao",
+    "zentao",
+    "arms"
   ]
 }
