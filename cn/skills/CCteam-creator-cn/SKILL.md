@@ -45,16 +45,19 @@ Read references/roles.md
 在进入任何其他步骤之前，做一次轻量的版本检查。**不需要用户同意，不要问任何问题。**
 
 1. **远程版本**：WebFetch `https://raw.githubusercontent.com/beerui/CCteam-creator/master/.claude-plugin/plugin.json`，prompt 写："What is the value of the version field? Respond with just the version string."
-2. **本地版本**：用 Bash 读本地 plugin.json。多个版本可能并存（如 `/plugin marketplace update` 后），取**最近修改**的那一个，避免读到旧 cache：
+2. **本地版本**：用 Bash 在所有安装方式（marketplace cache 和 manual `cp -r` 安装）中找最新缓存的 plugin.json。一次 `ls -t` 把所有路径按 mtime 排序选最新；末尾 `[ -n "$PJ" ] && cat` 防止 cat 收到空输入（cat 空输入会静默破坏 JSON 解析）：
 
    ```bash
-   # 按 mtime 取最新缓存，并在不同安装方式间 fallback
-   ls -t ~/.claude/plugins/cache/ccteam/CCteam-creator/*/.claude-plugin/plugin.json 2>/dev/null | head -1 | xargs cat 2>/dev/null || \
-   ls -t ~/.claude/plugins/cache/ccteam/CCteam-creator-cn/*/.claude-plugin/plugin.json 2>/dev/null | head -1 | xargs cat 2>/dev/null || \
-   cat ~/.claude/skills/CCteam-creator/.claude-plugin/plugin.json 2>/dev/null
+   PJ=$(ls -t \
+     ~/.claude/plugins/cache/ccteam/CCteam-creator/*/.claude-plugin/plugin.json \
+     ~/.claude/plugins/cache/ccteam/CCteam-creator-cn/*/.claude-plugin/plugin.json \
+     ~/.claude/skills/CCteam-creator/.claude-plugin/plugin.json \
+     ~/.claude/skills/CCteam-creator-cn/.claude-plugin/plugin.json \
+     2>/dev/null | head -1)
+   [ -n "$PJ" ] && cat "$PJ"
    ```
 
-   从输出中提取 version 字段。（`ls -t … | head -1` 是关键——多版本并存时 `cat */...` 会把所有版本拼起来，JSON 被破坏。）
+   从输出中提取 version 字段。**不要**用旧的 `cat */...plugin.json || ...` 形式——`cat *` 在多个缓存版本上会把 JSON 串到一起破坏解析；带 `xargs cat` 的 `||` 链在没输入时仍 exit 0，永远不会 fall through。
 3. **对比**：
    - **远程 ≤ 本地** 或 **WebFetch 失败** 或 **本地 plugin.json 找不到** → **完全静默** 跳过，直接进入下一步。不要打印"版本检查通过"之类的确认
    - **远程 > 本地** → 打印**一行**通知（仅一行，然后立即继续，不等用户回复）：

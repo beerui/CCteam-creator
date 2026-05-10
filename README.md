@@ -210,17 +210,21 @@ git clone https://github.com/beerui/CCteam-creator.git
 
 # 英文版(推荐)
 cp -r CCteam-creator/skills/CCteam-creator ~/.claude/skills/CCteam-creator
+cp -r CCteam-creator/.claude-plugin ~/.claude/skills/CCteam-creator/    # 让 Step 0 Update Check 能读到 version
 
 # 或中文版
 cp -r CCteam-creator/cn/skills/CCteam-creator-cn ~/.claude/skills/CCteam-creator-cn
+cp -r CCteam-creator/cn/.claude-plugin ~/.claude/skills/CCteam-creator-cn/   # 同上
 ```
+
+> **第二行 `cp` 不能省**：skill 目录本身没有版本元数据，把仓库根的 `.claude-plugin/` 也复制到 skill 下，Step 0 才能读到 `plugin.json` 的 version 字段并正确通知更新。如果省略，本 skill 仍可用，但**不会**收到新版本通知。
 
 然后**重启 Claude Code 一次**(skill 在 session 启动时被发现)。重启后:
 
 - Slash 命令:`/CCteam-creator` 或 `/CCteam-creator-cn`
 - 自然语言:"帮我搭建一个团队" / "set up a team for my project"
 
-**后续更新**:进入 clone 目录,运行 `git pull`,然后重新执行上面的 `cp -r` 命令即可。skill 内置的 Step 0 Update Check 会在新版本可用时自动通知你。
+**后续更新**:进入 clone 目录,运行 `git pull`,然后重新执行上面**两条** `cp -r` 命令即可（skill 目录 + `.claude-plugin/`）。skill 内置的 Step 0 Update Check 会在新版本可用时自动通知你。
 
 ### 方式 3：项目级安装
 
