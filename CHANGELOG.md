@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 0.1.3 - 2026-05-11
+
+> Patch: completes the 0.1.2 source=arms-rum rollout — bug-triage onboarding/role/template files now match the /ccteam-scan command spec.
+> Patch：补完 0.1.2 source=arms-rum 的下沉——bug-triage onboarding/role/template 现已与 /ccteam-scan 命令规范一致。
+
+### Fixed / 修复
+- **bug-triage onboarding inconsistency** with 0.1.2 spec:
+  After 0.1.2 introduced `source=arms-rum` and `last-scan-<source>.txt` in `commands/ccteam-scan.md` and the source enum, the per-agent guidance in `references/onboarding.md`, `roles.md`, and `templates.md` was not updated. Result: an actually-spawned bug-triage would still try the old MCP name `alibabacloud-api` and a single `last-scan.txt`, contradicting the v0.1.2 scan command. Now in sync (EN+CN).
+  bug-triage onboarding 与 0.1.2 规范不一致：0.1.2 在 ccteam-scan.md 和 source 枚举里引入了 `source=arms-rum` 和 `last-scan-<source>.txt`，但 bug-triage 的 onboarding/roles/templates 里的具体步骤说明没同步改。实际 spawn 出来的 bug-triage 还在用旧 MCP 名 `alibabacloud-api` 和单个 `last-scan.txt`——与 v0.1.2 命令规范矛盾。本版本同步完毕（EN+CN）。
+
+### Notes / 备注
+- Continuation of 0.1.2 — together they make ARMS RUM end-to-end self-consistent across docs / scan command / agent behavior.
+  0.1.2 的延续——两版合起来让 ARMS RUM 的端到端在文档 / 扫描命令 / agent 行为上自洽。
+
 ## 0.1.2 - 2026-05-11
 
 > Patch: Step 0 fallback regression fix + manual install completeness + ARMS RUM source.
