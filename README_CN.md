@@ -6,6 +6,18 @@
 
 [English](./README.md) | [中文](./README_CN.md)
 
+> 基于 [jessepwj/CCteam-creator](https://github.com/jessepwj/CCteam-creator) v1.4.3 演进，新增阿里云生态集成（云效 Codeup MR 自动提交 / 禅道 Bug 单 intake / ARMS 错误巡检）。
+
+## 0.1.0 新增能力
+
+- **`bug-triage` 角色**：拉禅道 Bug 单 / ARMS 错误事件 → 落到 `.plans/<project>/intake/` 候选池
+- **dev MR 自动提交**：评审通过后自动 git push + 调用云效 MCP 创建 MR
+- **`/ccteam-scan` 斜杠命令**：立即触发巡检
+- **CronCreate 定时巡检**：默认每天 9:00 扫 ARMS 错误
+- **Intake Processing Protocol**：6 状态机 + team-lead 主动汇报
+
+详见 [设计文档](docs/superpowers/specs/2026-05-10-ccteam-aliyun-design.md)、[实施 Plan](docs/superpowers/plans/2026-05-10-ccteam-aliyun-impl.md) 和 [intake 用户手册](docs/intake-protocol.cn.md)。
+
 ## 站在巨人的肩膀上
 
 CCteam-creator 基于以下优秀的开源项目和工程实践构建：
