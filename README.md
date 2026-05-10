@@ -237,9 +237,13 @@ cp -r CCteam-creator/cn/skills/CCteam-creator-cn .claude/skills/CCteam-creator-c
 ## 使用方法
 
 ```
+# 中文 skill 触发
 > 帮我的电商项目搭建一个团队
 > /CCteam-creator-cn
-> 我要做一个 REST API，帮我建个团队
+
+# 英文 skill 触发
+> set up a team for my e-commerce project
+> /CCteam-creator
 ```
 
 > Slash 命令是 `/CCteam-creator-cn`(英文版是 `/CCteam-creator`)。自然语言触发也有效——直接说"帮我搭建团队"之类的即可。如果你通过 Skill 工具直接调用,用完整 namespace:`Skill(CCteam-creator-cn:CCteam-creator-cn)`。
@@ -502,7 +506,7 @@ cp -r cn/skills/CCteam-creator-cn ~/.claude/skills/CCteam-creator-cn
 ```
 CCteam-creator/
   .claude-plugin/
-    marketplace.json              -- Marketplace 目录
+    marketplace.json              -- Marketplace 目录（含 EN + CN 双 plugin）
     plugin.json                   -- 英文插件元数据
   skills/
     CCteam-creator/               -- 英文技能
@@ -510,18 +514,27 @@ CCteam-creator/
       scripts/
         golden_rules.py           -- 预置通用代码健康检查
       references/
-        roles.md / onboarding.md / templates.md
-  cn/                             -- 中文变体
+        roles.md / onboarding.md / templates.md / mcp-setup.md
+  cn/                             -- 中文变体（独立 plugin）
     .claude-plugin/plugin.json
     skills/
-      CCteam-creator/
+      CCteam-creator-cn/          -- 中文技能（注意带 -cn 后缀，避免与英文版命名空间冲突）
         SKILL.md
         scripts/
           golden_rules.py
         references/
-          roles.md / onboarding.md / templates.md
-  docs/images/                    -- 截图
+          roles.md / onboarding.md / templates.md / mcp-setup.md
+  commands/
+    ccteam-scan.md                -- /ccteam-scan 斜杠命令
+  scripts/
+    validate-release.py           -- 发布前自检（版本同步 + 命名对齐 + 双语镜像）
+  docs/
+    images/                       -- 截图
+    intake-protocol.md            -- 英文 intake 状态机手册
+    intake-protocol.cn.md         -- 中文 intake 状态机手册
+    release-guide.md              -- 发布流程
   README.md
+  CHANGELOG.md
   LICENSE
 ```
 
