@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## 0.1.4 - 2026-05-16
+
+> Minor: ARMS RUM 即时巡检 (`/arms` 命令) + UX gap closure surfaced by real-project validation against `daji-customer-service`.
+> Minor 版本：新增 ARMS RUM 即时巡检（`/arms` 命令） + 在真实项目 `daji-customer-service` 验证暴露的 UX 缺口修复。
+
+### Added / 新增
+- **`/arms` slash command + `arms` agent** for active ARMS RUM exception triage (CN only this release):
+  - New role `arms` (sonnet, read-only on source code) — queries SLS via Python SDK, normalizes/groups exceptions, cross-locates root cause from project source, archives fingerprints in `.plans/<project>/arms/archive/`, dispatches dev with `source=arms` task envelope.
+  - New ARMS sub-protocol for backend-dev / frontend-dev: **local commit, no MR** — team does not auto-merge; user owns final merge decision. Distinct from intake-driven bug fixes which still go through Codeup MR.
+  - Fingerprint = `normalize_message(exception.message) + " @ " + view.name` — `view.name` already URL-normalized by ARMS convergence backend; `norm_message` strips UUIDs/timestamps/long IDs in Python.
+  - Archive lifecycle: `analyzed` → `resolved` / `ignored`, with recurrence detection on next scan.
+  - Files: `commands/arms.md`, `cn/skills/CCteam-creator-cn/references/onboarding.md § arms`, `references/roles.md § arms`, `references/templates.md § ARMS 巡检配置/archive/fingerprint/resolution`, `SKILL.md` Step 1.2.4 + 1.3 + Key Rules.
+  
+  新增 `/arms` 斜杠命令和 `arms` 角色——主动型 ARMS RUM 异常分析师：用 Python SDK 查 SLS、Python 端归一化分组、读项目源码交叉定位、归档指纹、派 dev（走"本地 commit、不走 MR"子协议，与 intake 流的 Codeup MR 互不影响）。
+
+### Fixed / 修复（真实项目验证暴露）
+- **Existing team has no path to add `arms` role**: original `/arms` errored with "请重新 `/CCteam-creator-cn` 组团" when team-snapshot lacked arms, conflicting with project CLAUDE.md's "Never create a new team". Now `/arms` §4 follows /ccteam-scan's temp-spawn pattern: `Agent(team_name=<当前团队>, ...)` joins the existing team, §8 asks user whether to make it permanent.
+  现有团队无 arms 角色升级路径：原版直接报错，与项目 CLAUDE.md "Never create a new team" 冲突。改为临时 spawn + team_name 参数加入团队，§8 询问是否永久加入花名册。
+- **`.convergence` field hallucination**: 0.1.4 design assumed `exception.message.convergence` and `view.name.convergence` were ARMS-queryable suffix fields. Doc/SDK lookup confirms "收敛/convergence" is a backend URL normalization mechanism, not a separate field. Replaced with Python-side `normalize_message()` (regex strips UUID/timestamp/long-numeric-ID) + new Step 3.2 field discovery probe to verify actual log keys before grouping.
+  `.convergence` 字段是设计幻觉：ARMS 文档证实 convergence 是后端 URL 归一化机制而非可查询字段；改用 Python 端 `normalize_message()` + Step 3.2 字段探测。
+- **macOS system Python pip install permission failure**: `pip install aliyun-log-python-sdk` fails on macOS system Python without `--user`. SKILL/roles/onboarding now all use `pip3 install --user`.
+  macOS 系统 Python `pip install` 缺 `--user` 装不上：全文统一为 `pip3 install --user`。
+- **Dead-end error UX when CLAUDE.md ARMS config missing or partial-placeholder**: original `/arms` errored if section missing or fields like `<your-pid>`. Now `/arms` §2 detects placeholder values (`<...>` / `your-...` / `xxx` / `TODO` / cred fields <8 chars) and interactively补全 via AskUserQuestion (region/env enums) + text input (PID/project/logstore/AK), writes back to CLAUDE.md before continuing.
+  CLAUDE.md ARMS 配置缺失或半填占位时的死胡同：检测 `<...>` / `your-...` / `xxx` / `TODO` 等占位 → AskUserQuestion + 文本输入交互式补全 → 自动写回 CLAUDE.md。
+- **arms onboarding Step 1 missing task folder skeleton**: subsequent steps would fail to write progress.md. Added skeleton creation at Step 1.
+  arms onboarding Step 1 缺任务文件夹建骨架：补上,后续 step 才能写 progress.md。
+- **SLS error handling un-classified**: `LogException` (errorCode=ProjectNotExist/Unauthorized/...) lacked guidance on which to retry vs escalate. Added classification table in onboarding Step 3.3.
+  SLS `LogException` 错误未分类：补错误码分类表（ProjectNotExist / Unauthorized / WriteQuotaExceed 等的处理路径）。
+
+### Notes / 备注
+- **CN-only this release**: English skill (`skills/CCteam-creator/`) has not been updated; `/arms` and `arms` role are CN-skill exclusive in 0.1.4. EN parity scheduled for follow-up.
+  本版本仅 CN：英文版 skill 暂未同步，/arms 和 arms 角色仅 CN skill 提供，EN 待补。
+- **Validation methodology**: Driven by real-project run in `daji-customer-service` rather than spec-only acceptance. The 4 fixed gaps were invisible from the 13-criteria design checklist; all surfaced only when simulating a first-time user flow. This validation pattern is now captured in user memory for future feature work.
+  验证方法学：本次 UX 修复是在真实项目 `daji-customer-service` 跑一遍流程暴露的，不是 spec-only 验收。13 项验收清单全过的功能仍有 4 处缺口，仅在模拟新用户首次流程时暴露——此验证模式已写入记忆。
+
 ## 0.1.3 - 2026-05-11
 
 > Patch: completes the 0.1.2 source=arms-rum rollout — bug-triage onboarding/role/template files now match the /ccteam-scan command spec.
