@@ -301,7 +301,13 @@ pending ──accept──→ accepted ──dev完成MR──→ in_review ─�
 
 ## ARMS 巡检配置
 
-> 仅当 SKILL.md Step 1.2.3 启用了 ARMS 巡检时填充。
+> 仅当 SKILL.md Step 1.2.3 启用了 ARMS 巡检 / Step 1.2.4 启用了 arms 即时巡检时填充。
+
+ARMS 在 CCteam 中有两条独立巡检通路,各自有不同的配置块:
+
+### CRON 巡检（bug-triage）
+
+定时拉 ARMS / ARMS RUM 错误事件,翻译落 intake,由 team-lead 决策立项。
 
 - **schedule**: `0 9 * * *`（cron 表达式，可改）
 - **project_id**: `<ARMS 项目标识>`
@@ -309,6 +315,40 @@ pending ──accept──→ accepted ──dev完成MR──→ in_review ─�
 - **CronCreate task ID**: `<创建后填入>`
 
 巡检触发链路、参数说明详见 SKILL.md § Intake Processing Protocol 和 docs/intake-protocol.cn.md。
+
+### 即时巡检（arms agent）
+
+`/arms` 斜杠命令 / 自然语言"查一下 arms"触发,arms agent 直接走 SLS Python SDK 拉 RUM exception,自带 findings + 指纹归档闭环。
+
+```
+## ARMS 巡检配置 — 即时巡检（arms agent）
+
+- pid: <ARMS RUM 应用 ID, 如 c67ee5ri5a@a02e69a18ed6a39>
+- app_name: <可读应用名, 仅用于日志>
+- default_env: prod                    # 用户不显式指定时的默认环境
+- default_days: 7                      # 默认回溯天数
+
+# SLS 凭证（arms agent 直接查 SLS logstore-rum）
+- sls_region: cn-hangzhou              # SLS endpoint 所在 region
+- sls_project: <SLS project 名>
+- sls_logstore: <RUM logstore 名, 通常含 rum>
+- sls_ak_id: <Access Key ID>
+- sls_ak_secret: <Access Key Secret>
+
+# 噪声过滤（arms agent step 4 用,可选）
+- arms_ignore_patterns:
+  - "ResizeObserver loop limit"
+  - "Script error."
+  - "<其他已知噪声的 convergence_message 子串>"
+```
+
+> **凭证安全**:
+> - sls_ak_id / sls_ak_secret 是只读 AK,推荐用 RAM 子账号 + 只读策略
+> - arms agent 仅在会话内使用,**不要**写到 `.plans/` 文件
+> - 推荐 AK 范围: `aliyun-log-read-only`(SLS 全读) + 必要的 ARMS RUM 应用列表权限
+
+> **如何获取 pid**: 阿里云控制台 → ARMS → 用户体验监控 → 应用列表,复制目标应用的 "应用 ID"。
+> **如何获取 sls_project / sls_logstore**: 阿里云控制台 → ARMS 应用设置 → 数据存储 → SLS 链路,记下 project 和 logstore 名。
 
 ## 文件结构
 
@@ -1146,4 +1186,127 @@ external_link: https://zentao.example.com/bug-12345
 - 每次扫描成功完成后写入（覆盖）
 - 用于下次扫描的 `since` 参数默认值
 - **per-source 独立**：避免后端 ARMS 和前端 RUM 共用 cursor 导致漏拉/重拉
+
+## ARMS archive 模板（arms agent）
+
+由 arms agent 维护,作为指纹库,用于 step 2 历史对比和 step 6 归档登记。
+
+### archive/index.md
+
+路径: `.plans/<project>/arms/archive/index.md`。按月分表,每行一个任务,**fingerprint 列是 grep 入口**。
+
+```markdown
+# ARMS Archive Index
+
+> arms agent 自动维护——每次完成 findings.md 后追加一行,dev 完成修复后改 status。
+> grep 这个文件以查复发: `grep -F "<fingerprint>" .plans/<project>/arms/archive/index.md`
+
+## 2026-05
+
+| task-id | fingerprint | env | severity | status | resolved_at |
+|---------|-------------|-----|----------|--------|-------------|
+| arms-20260514-001 | conv list failed: 33001 @ /agent | daily | P2 | resolved | 2026-05-14 |
+| arms-20260515-001 | token无效或已过期 @ /agent | daily | P3 | analyzed | — |
+
+## 2026-04
+
+| task-id | fingerprint | env | severity | status | resolved_at |
+|---------|-------------|-----|----------|--------|-------------|
+| arms-20260420-001 | TypeError: cannot read 'length' @ /list | prod | P1 | resolved | 2026-04-21 |
+```
+
+字段约定:
+
+- **task-id**: `arms-<YYYYMMDD>-<NNN>`,同日多次扫描递增
+- **fingerprint**: `exception.message.convergence + " @ " + view.name.convergence`,**禁止换行**（保证 grep -F 一行即命中）
+- **env**: prod / daily / pre / local,与查询参数一致
+- **severity**: arms agent 根据频次 + 影响判断（P0/P1/P2/P3）
+- **status**: `analyzed`（写完 findings 即此态）/ `resolved`（dev 完成 + reviewer [OK]）/ `ignored`（用户明确不修）
+- **resolved_at**: ISO 日期,未解决填 `—`
+
+## ARMS fingerprint 模板（arms agent）
+
+由 arms agent 在 step 6 写,路径: `.plans/<project>/arms/<task-id>/fingerprint.md`。是单条指纹的详细载体,与 archive/index.md 互为详略。
+
+```markdown
+---
+task_id: arms-20260514-001
+source: arms_rum
+pid: c67ee5ri5a@a02e69a18ed6a39
+app_name: 大集客服
+env: daily
+status: analyzed
+severity: P2
+created_at: 2026-05-14T10:00:00+08:00
+resolved_at: —
+fingerprint: "conv list failed: 33001 @ /agent"
+---
+
+## 指纹
+
+- convergence_message: `conv list failed: 33001`
+- convergence_view: `/agent`
+- full_message_sample: `conv list failed: 33001 (sessionId=xxx)`
+- stack_summary: `at onResponse (chunk-vendors.xxx.js:631:67170)`
+
+## 频次
+
+- 7 天内总次数: 8
+- 影响 session 数: 5
+- 最早一次: 2026-05-08T09:12:00+08:00
+- 最新一次: 2026-05-14T09:45:00+08:00
+
+## 关联
+
+- SLS 查询参数快照: env=daily, days=7, query="app.id:... AND event_type:exception"
+- 推荐派单: frontend-dev
+- 拟分支名: fix/arms-20260514-001
+```
+
+> **状态机**: `analyzed → resolved`（dev 完成 + reviewer [OK] 后由 arms agent 补 resolution.md + 改本文件 frontmatter status）或 `analyzed → ignored`（用户明确不修,team-lead 通知 arms 改）。
+
+## ARMS resolution 模板（arms agent）
+
+由 arms agent 在 dev 完成 + reviewer [OK] 后补写,路径: `.plans/<project>/arms/<task-id>/resolution.md`。这是闭环的最后一公里。
+
+```markdown
+---
+task_id: arms-20260514-001
+resolved_at: 2026-05-14T16:30:00+08:00
+branch: fix/arms-20260514-001
+commit: abc1234
+reviewer_verdict: "[OK]"
+mr_skipped: true
+---
+
+## 根因（一句话）
+
+API `/conv/list` 在 token 过期时返回 33001,前端 onResponse 没有捕获 → unhandled rejection。
+
+## 实施摘要
+
+- 改动文件:
+  - `src/api/conv.ts:142-160` — 增加 33001 状态分支
+  - `src/components/Agent/ConvList.vue:88` — 加 fallback UI
+- 修复方案: 方案 A（findings.md 推荐的）— 增加重试 + 友好提示
+- 测试: 新增单测 `conv.spec.ts` 覆盖 33001 路径
+
+## reviewer 评审摘要
+
+- Verdict: [OK]
+- 维度: 安全 STRONG / 质量 ADEQUATE / 性能 ADEQUATE
+- 完整审查报告: `.plans/<project>/reviewer/review-arms-20260514-001/findings.md`
+
+## 合并状态
+
+未合并到主干（ARMS 任务**不走 MR**,本地 commit 后由用户自行走合并流程）。
+分支 `fix/arms-20260514-001` 保留在本地,等待用户决策。
+
+## 历史关联
+
+- 同指纹是否复发: 否（首次出现）
+- 同 view 历史参考: arms-20260420-001（同页面 /agent,不同错误码,无关联）
+```
+
+
 

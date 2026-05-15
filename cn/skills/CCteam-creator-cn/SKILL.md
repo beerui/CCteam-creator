@@ -176,6 +176,26 @@ Read references/roles.md
 
 不启用 → 跳过，用户只能靠手动 `/ccteam-scan` 触发。
 
+### 1.2.4 是否启用 ARMS 即时巡检（仅当 1.2.1 选了 ARMS 时执行）
+
+CRON 巡检（1.2.3）走 bug-triage 落 intake,适合"每天有空看一眼"。**即时巡检**(`/arms` 命令)走独立的 `arms` 角色,直接查 SLS、做根因分析、自动派 dev 修复,适合"我现在想知道这一刻 prod 有什么异常"。
+
+询问用户：
+
+- 是否要启用 `/arms` 即时巡检?(可与 CRON 共存,两者互不冲突)
+- ARMS RUM 应用的 **PID** (即应用 ID,从 ARMS 控制台→用户体验监控→应用列表复制)
+- SLS 凭证: `sls_ak_id` / `sls_ak_secret` (建议 RAM 子账号 + 只读策略)
+- SLS 定位: `sls_region` / `sls_project` / `sls_logstore` (ARMS 应用设置→数据存储→SLS 链路)
+- 默认环境: 通常是 `prod` (推荐保持,用户在命令里显式指定才查其他环境)
+
+如启用：
+
+1. 把上述配置写入即将生成的 CLAUDE.md `## ARMS 巡检配置 — 即时巡检（arms agent）` 节(详细字段见 references/templates.md)
+2. 把 `arms` 角色加入 1.3 团队推荐
+3. 提醒用户一次性安装 SDK: `pip install aliyun-log-python-sdk`(arms agent 启动后会自检,缺包就装)
+
+不启用 → 跳过,用户只能用 CRON 巡检(intake 流)或不用 ARMS。
+
 ### 1.3 推荐团队配置
 
 根据用户需求，推荐合适的角色组合。解释每个角色的作用和为什么推荐它。
@@ -191,6 +211,7 @@ Read references/roles.md
 | 前端开发  | frontend-dev | tdd-guide        | sonnet | 写代码 + TDD + 大任务按 task 分文件夹  |
 | 探索/研究 | researcher   | —                | sonnet | 代码搜索 + 网页搜索 + 只读不改代码        |
 | Bug 翻译 | bug-triage   | —                | sonnet | 拉外部 Bug/Error 数据 → 写 intake，read-only on code（仅 1.2.1 选了禅道或 ARMS 时推荐） |
+| ARMS 巡检 | arms         | —                | sonnet | 即时查 SLS RUM 异常 + 交叉代码定位根因 + 写 findings + 指纹归档 → 派 dev（仅 1.2.4 启用时推荐） |
 | 联调测试  | e2e-tester   | e2e-runner       | sonnet | E2E 测试 + 浏览器自动化 + Bug 记录    |
 | 代码审查  | reviewer     | code-reviewer    | sonnet | 只读审查 + 安全/质量/性能深度检查         |
 | 管家    | custodian    | refactor-cleaner | sonnet | 约束合规 + 文档治理 + 模式→自动化 + 代码清理 |
@@ -219,6 +240,7 @@ Read references/roles.md
   - **反模式**：方向 B 依赖方向 A 的结论时不要拆（如"先确定认证方案，再调研实现库"）——单个 researcher 按顺序做比两个排队等依赖更快
 - **custodian 适用于 4+ 智能体团队或长期项目**。小团队（2-3 个智能体）custodian 的开销可能不值得——team-lead 可以直接承担合规检查
 - **bug-triage 仅在 1.2.1 启用了禅道或 ARMS 集成时推荐**——它是 1.2.1 的下游产物，没有外部触发源时会变成空跑的角色。MCP 都到位是必要前提
+- **arms 仅在 1.2.4 启用了 ARMS 即时巡检时推荐**——它是 1.2.4 的下游产物,需要 SLS 凭证 + PID 配齐才能工作。与 bug-triage 并存不冲突: bug-triage 走 CRON + intake、arms 走 `/arms` 即时分析 + 自带归档闭环
 - 用户可以添加自定义角色（解释自定义角色需要提供：名称、职责、模型选择）
 
 **非软件项目适配**：
@@ -506,6 +528,8 @@ ERROR: api-contracts.md out of sync
 - **大任务先写方案再派发**：跨 3+ 角色或 5+ tool calls 的任务，team-lead 必须先写 `.plans/<project>/session-<N>-<topic>-plan.md`（目标 / 方案 / 参数 / 任务拆分 / 下发顺序 / 回滚）**再** SendMessage。派发消息只引用 plan 章节，不在消息里重复上下文，禁止边派边想
 - **可派的不自己做**：team-lead 禁止自己执行 commit / push / SSH 巡检 / 脏文件清理 / deploy.sh 运行——这些一律派给 backend-dev（或对应角色）。team-lead 只做决策、跨仓库协调、不可派的本地动作（KP-1 重启等）、custodian 派发
 - **External integration gates**：启用禅道/ARMS/Codeup 集成的项目，setup 必须先过第 1.2.2 步 MCP 校验；任何缺失依赖都禁止往后走，否则 bug-triage 与 dev 的 MR 流程会在运行时失败
+- **`/arms` 命令前置门禁**: 用户敲 `/arms` 或自然语言"查 arms / 扫 arms" → team-lead 必须先 (a) 检查 `.plans/<project>/team-snapshot.md` 存在,不存在则报错"请先 /CCteam-creator-cn 组团" (b) 从 CLAUDE.md `## ARMS 巡检配置 — 即时巡检` 节读 PID + SLS 凭证 (c) SendMessage 给 arms 时**完整传递**所有参数 (pid/env/days/keywords/ak/secret/region/project/logstore),不让 arms 自己再读 CLAUDE.md
+- **ARMS 任务不走 MR**: arms 派给 dev 的任务消息含 `mr_skip: true` + `commit_template: arms`,dev 在本地 commit 后**不 push**,等用户自行走合并流程。这是 ARMS 任务的专属子协议,不影响 bug-triage / intake / feat 任务的正常 MR 流
 
 ## Team-Lead 运营指南
 

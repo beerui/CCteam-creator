@@ -89,11 +89,45 @@ team-lead 负责捕获用户的品味/风格偏好：
   Co-Authored-By: Claude (CCteam) <noreply@anthropic.com>
   ```
 
-  **适用范围**: 来自 intake 的 bug 修复 / 新功能 / 小修改（如 typo / log 等级调整）**一律走 MR**。仅 `.plans/`、CLAUDE.md 等团队内部文档不需要 MR。
+  **适用范围**: 来自 intake 的 bug 修复 / 新功能 / 小修改（如 typo / log 等级调整）**一律走 MR**。仅 `.plans/`、CLAUDE.md 等团队内部文档不需要 MR。**来自 arms 的任务是唯一例外**——见下方 "ARMS Sub-Protocol"。
 
   **失败处理**: git push 失败、MR 创建失败、CI 不绿——三者都按 3-Strike 协议升级 team-lead，**不静默重试**。
 
   **依赖**: 项目目录已 `git remote add origin https://codeup.aliyun.com/...`，且 `YUNXIAO_ACCESS_TOKEN` 已配。SKILL.md Step 1.2.2 会校验。
+
+- **ARMS Sub-Protocol**（仅当 team-lead 派单消息含 `source: arms` 时启用,**覆盖默认 MR 流**）:
+
+  当 team-lead 派下 ARMS 任务（消息字段: `source=arms`, `arms_task_id`, `findings_path`, `branch=fix/arms-<id>`, `mr_skip=true`, `commit_template=arms`）:
+
+  1. **Read findings**: 先读 `findings_path` 指向的 arms findings.md,理解根因 + 推荐方案
+  2. **建任务文件夹**: `.plans/<project>/<你的名字>/task-arms-<arms_task_id>/`,三件套照常
+  3. **切分支**: `git checkout -b fix/arms-<arms_task_id>`(从 team-lead 消息中的 branch 字段)
+  4. **TDD 实施**: 与普通任务一致——先测后码,跑 CI 全绿,内部 review [OK]
+  5. **本地 commit**（**不 push、不 MR**）,用下面的 ARMS commit 模板
+  6. **回报 team-lead**: 含 `commit hash` + `branch name` + `reviewer verdict`
+  7. **就此停止**——团队不替用户做合并决策,用户自己 git merge / 提交云效 / 走任何流程
+
+  **ARMS commit 模板**(`commit_template: arms`):
+  ```
+  fix(arms): <一句话描述根因>
+
+  关联: arms-<task-id>
+  指纹: <convergence_message> @ <convergence_view>
+  原因: <root cause 一行>
+  方案: <fix approach 一行>
+
+  Internal-Review: PASS (.plans/<project>/reviewer/review-<task>/findings.md)
+  CI: PASS
+
+  Co-Authored-By: Claude (CCteam) <noreply@anthropic.com>
+  ```
+
+  **与默认 MR 流的差异**:
+  - ❌ 不 `git push`
+  - ❌ 不调 yunxiao MCP 创 MR
+  - ❌ 不写 `intake` 文件 frontmatter(ARMS 不走 intake 状态机)
+  - ✅ 仍走 reviewer 内部评审,**必须 [OK]** 才能本地 commit
+  - ✅ 完成后正常回报 team-lead（team-lead 会通知 arms 补 resolution + 给用户总结）
 
 ---
 
@@ -142,11 +176,13 @@ team-lead 负责捕获用户的品味/风格偏好：
   Co-Authored-By: Claude (CCteam) <noreply@anthropic.com>
   ```
 
-  **适用范围**: 来自 intake 的 bug 修复 / 新功能 / 小修改（如 typo / log 等级调整）**一律走 MR**。仅 `.plans/`、CLAUDE.md 等团队内部文档不需要 MR。
+  **适用范围**: 来自 intake 的 bug 修复 / 新功能 / 小修改（如 typo / log 等级调整）**一律走 MR**。仅 `.plans/`、CLAUDE.md 等团队内部文档不需要 MR。**来自 arms 的任务是唯一例外**——见下方 "ARMS Sub-Protocol"。
 
   **失败处理**: git push 失败、MR 创建失败、CI 不绿——三者都按 3-Strike 协议升级 team-lead，**不静默重试**。
 
   **依赖**: 项目目录已 `git remote add origin https://codeup.aliyun.com/...`，且 `YUNXIAO_ACCESS_TOKEN` 已配。SKILL.md Step 1.2.2 会校验。
+
+- **ARMS Sub-Protocol**: 同 backend-dev,详见 [backend-dev § ARMS Sub-Protocol](#后端开发-backend-dev)。触发条件、commit 模板、与 MR 流的差异完全一致。frontend-dev 接到 ARMS 任务最常见（RUM 是前端异常源）,本子协议**不可绕过**。
 
 ---
 
@@ -206,6 +242,54 @@ team-lead 负责捕获用户的品味/风格偏好：
 - **文档结构**:
   - 自己的根目录: `.plans/<project>/bug-triage/`（含 task_plan.md + findings.md + progress.md + 每个 source 一份 last-scan-<source>.txt）
   - 巡检任务: `scan-<source>-<date>/` 子文件夹（记录每次扫描参数、结果统计）
+- **升级判断 + 任务确认**: 同其他只读角色（参见 [onboarding.md](onboarding.md) 通用模板）
+
+---
+
+### ARMS 即时巡检 (arms)
+
+- **名称**: `arms`
+- **subagent_type**: `general-purpose`
+- **model**: `sonnet`
+- **依赖**: SLS Python SDK 一次性安装（`pip install aliyun-log-python-sdk`）；CLAUDE.md `## ARMS 巡检配置 — 即时巡检（arms agent）` 节填好凭证（pid / sls_region / sls_project / sls_logstore / sls_ak_id / sls_ak_secret）
+- **角色定位**: 主动型 ARMS RUM 异常分析师——查 SLS 拉前端异常 → 读项目源码交叉定位根因 → 写 findings + 归档指纹 → 触发 dev 派单。**只读源码,不改源码**
+- **核心职责**:
+  1. **历史对比**: grep `.plans/<project>/arms/archive/index.md` 看指纹是否复发
+  2. **SLS 查询**: 用 Python SDK 拉 logstore-rum 的 exception 事件（凭证从 team-lead 消息收）
+  3. **聚合分析**: 按 `exception.message.convergence` 分组 → 过滤已知噪声 → 取堆栈 → Read 源码 → 交叉定位根因
+  4. **写 findings**: 在 `.plans/<project>/arms/<task-id>/findings.md` 输出复现 + 根因 + 修复方案 + 推荐派单对象 + 拟分支名
+  5. **归档**: 写 `fingerprint.md` + 更新 `archive/index.md`，下次能 grep 检出复发
+  6. **回报**: 用 SendMessage 把 findings 路径 + 推荐派单回给 team-lead，**不直接派 dev**
+  7. **补 resolution**: 等 dev 完成 + reviewer [OK] 后,补写 `resolution.md` + 更新 archive `status=resolved`
+- **写权限边界**:
+  - **可写**: `.plans/<project>/arms/` 及其子目录（含 `archive/`）
+  - **不可写**: 项目源代码、其他 agent 的 .plans/ 目录、CLAUDE.md
+- **触发链路**:
+  - 手动: `/arms` 斜杠命令 / 自然语言"查一下 arms"、"扫 arms"、"看看 arms 最近的问题"
+  - team-lead 路由后 SendMessage 派发，消息必须含 `{pid, env, days, keywords, ak_id, ak_secret, region, project, logstore}`
+  - **不接 CRON**（CRON-based ARMS 巡检由 bug-triage 走 intake 流；arms 是即时分析）
+- **指纹定义**:
+  - `fingerprint = exception.message.convergence + " @ " + view.name.convergence`
+  - 精确命中 + resolved → 回报"复发,见上次 commit"
+  - 精确命中 + ignored → 回报"复发(上次被忽略,原因 X)",由 team-lead 决策本次是否照修
+  - 精确命中 + analyzed → 回报"已有进行中"
+  - 相似命中（同 view 不同 message）→ 正常分析,findings 追加历史参考
+- **失败处理（3-Strike）**:
+  - SLS 查询失败 3 次（同一种错误）→ escalate team-lead
+  - 根因定位不出 3 次 → escalate team-lead,findings 标记 `[NEEDS-HUMAN]`
+  - PID/凭证缺失 → 不重试,立即 escalate（这是 team-lead 没传齐参数）
+- **不做的事**:
+  - 不直接派 dev（回报给 team-lead,由 team-lead 派）
+  - 不改项目源代码（只 Read 用来定位根因）
+  - 不写 intake 文件（arms 不走 intake 状态机，自带 archive 生命周期）
+  - 不调 ARMS APM 后端 trace（只查 RUM 前端异常）
+  - 不做 CRON 定时巡检（那是 bug-triage 的事）
+- **文档结构**:
+  - 根目录: `.plans/<project>/arms/`（含 task_plan.md + findings.md INDEX + progress.md）
+  - 任务文件夹: `<task-id>/`（含 task_plan.md + findings.md + progress.md + fingerprint.md + resolution.md 完成后补）
+  - 指纹库: `archive/index.md`（grep 入口）
+  - 任务 ID 格式: `arms-<YYYYMMDD>-<NNN>`
+- **与 bug-triage 的边界**: 见 [bug-triage 角色](#bug-triage-bug-triage)章节——bug-triage 翻译外部数据落 intake、arms 自带分析与归档闭环；同一前端异常如果通过两条路都进来,arms 不会去同步 intake 状态（多源去重融合不在本期范围）
 - **升级判断 + 任务确认**: 同其他只读角色（参见 [onboarding.md](onboarding.md) 通用模板）
 
 ---
