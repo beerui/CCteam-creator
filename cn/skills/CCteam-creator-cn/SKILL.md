@@ -192,7 +192,7 @@ CRON 巡检（1.2.3）走 bug-triage 落 intake,适合"每天有空看一眼"。
 
 1. 把上述配置写入即将生成的 CLAUDE.md `## ARMS 巡检配置 — 即时巡检（arms agent）` 节(详细字段见 references/templates.md)
 2. 把 `arms` 角色加入 1.3 团队推荐
-3. 提醒用户一次性安装 SDK: `pip install aliyun-log-python-sdk`(arms agent 启动后会自检,缺包就装)
+3. 提醒用户一次性安装 SDK: `pip3 install --user aliyun-log-python-sdk`(arms agent 启动后会自检,缺包就装。macOS / Linux 系统 Python 必须带 `--user`,否则权限失败)
 
 不启用 → 跳过,用户只能用 CRON 巡检(intake 流)或不用 ARMS。
 

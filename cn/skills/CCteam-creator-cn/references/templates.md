@@ -339,7 +339,7 @@ ARMS 在 CCteam 中有两条独立巡检通路,各自有不同的配置块:
 - arms_ignore_patterns:
   - "ResizeObserver loop limit"
   - "Script error."
-  - "<其他已知噪声的 convergence_message 子串>"
+  - "<其他已知噪声的 norm_message 子串>"
 ```
 
 > **凭证安全**:
@@ -1218,7 +1218,7 @@ external_link: https://zentao.example.com/bug-12345
 字段约定:
 
 - **task-id**: `arms-<YYYYMMDD>-<NNN>`,同日多次扫描递增
-- **fingerprint**: `exception.message.convergence + " @ " + view.name.convergence`,**禁止换行**（保证 grep -F 一行即命中）
+- **fingerprint**: `norm_message + " @ " + view.name`,**禁止换行**（保证 grep -F 一行即命中）。`norm_message` 是 Python 端归一化结果(见 onboarding § Step 4.1),`view.name` 通常已被 ARMS 后端 convergence 机制规整为模板路径(无需再归一化)
 - **env**: prod / daily / pre / local,与查询参数一致
 - **severity**: arms agent 根据频次 + 影响判断（P0/P1/P2/P3）
 - **status**: `analyzed`（写完 findings 即此态）/ `resolved`（dev 完成 + reviewer [OK]）/ `ignored`（用户明确不修）
@@ -1244,8 +1244,8 @@ fingerprint: "conv list failed: 33001 @ /agent"
 
 ## 指纹
 
-- convergence_message: `conv list failed: 33001`
-- convergence_view: `/agent`
+- norm_message: `conv list failed: 33001`
+- view: `/agent`
 - full_message_sample: `conv list failed: 33001 (sessionId=xxx)`
 - stack_summary: `at onResponse (chunk-vendors.xxx.js:631:67170)`
 

@@ -112,7 +112,7 @@ team-lead 负责捕获用户的品味/风格偏好：
   fix(arms): <一句话描述根因>
 
   关联: arms-<task-id>
-  指纹: <convergence_message> @ <convergence_view>
+  指纹: <norm_message> @ <view.name>
   原因: <root cause 一行>
   方案: <fix approach 一行>
 
@@ -251,12 +251,12 @@ team-lead 负责捕获用户的品味/风格偏好：
 - **名称**: `arms`
 - **subagent_type**: `general-purpose`
 - **model**: `sonnet`
-- **依赖**: SLS Python SDK 一次性安装（`pip install aliyun-log-python-sdk`）；CLAUDE.md `## ARMS 巡检配置 — 即时巡检（arms agent）` 节填好凭证（pid / sls_region / sls_project / sls_logstore / sls_ak_id / sls_ak_secret）
+- **依赖**: SLS Python SDK 一次性安装（`pip3 install --user aliyun-log-python-sdk`）；CLAUDE.md `## ARMS 巡检配置 — 即时巡检（arms agent）` 节填好凭证（pid / sls_region / sls_project / sls_logstore / sls_ak_id / sls_ak_secret）。**注意**: 不配凭证也能跑——`/arms` 命令会用 AskUserQuestion 交互式补全 CLAUDE.md
 - **角色定位**: 主动型 ARMS RUM 异常分析师——查 SLS 拉前端异常 → 读项目源码交叉定位根因 → 写 findings + 归档指纹 → 触发 dev 派单。**只读源码,不改源码**
 - **核心职责**:
   1. **历史对比**: grep `.plans/<project>/arms/archive/index.md` 看指纹是否复发
   2. **SLS 查询**: 用 Python SDK 拉 logstore-rum 的 exception 事件（凭证从 team-lead 消息收）
-  3. **聚合分析**: 按 `exception.message.convergence` 分组 → 过滤已知噪声 → 取堆栈 → Read 源码 → 交叉定位根因
+  3. **聚合分析**: Python 端归一化 `exception.message` 后,按 (norm_message, view.name) 分组 → 过滤已知噪声 → 取堆栈 → Read 源码 → 交叉定位根因
   4. **写 findings**: 在 `.plans/<project>/arms/<task-id>/findings.md` 输出复现 + 根因 + 修复方案 + 推荐派单对象 + 拟分支名
   5. **归档**: 写 `fingerprint.md` + 更新 `archive/index.md`，下次能 grep 检出复发
   6. **回报**: 用 SendMessage 把 findings 路径 + 推荐派单回给 team-lead，**不直接派 dev**
@@ -269,7 +269,7 @@ team-lead 负责捕获用户的品味/风格偏好：
   - team-lead 路由后 SendMessage 派发，消息必须含 `{pid, env, days, keywords, ak_id, ak_secret, region, project, logstore}`
   - **不接 CRON**（CRON-based ARMS 巡检由 bug-triage 走 intake 流；arms 是即时分析）
 - **指纹定义**:
-  - `fingerprint = exception.message.convergence + " @ " + view.name.convergence`
+  - `fingerprint = norm_message + " @ " + view.name`(`norm_message` 见 onboarding § Step 4.1 的 Python 归一化函数;`view.name` 已被 ARMS 后端 convergence 机制规整为模板路径)
   - 精确命中 + resolved → 回报"复发,见上次 commit"
   - 精确命中 + ignored → 回报"复发(上次被忽略,原因 X)",由 team-lead 决策本次是否照修
   - 精确命中 + analyzed → 回报"已有进行中"

@@ -431,7 +431,7 @@ commit_template: arms
 fix(arms): <一句话描述根因>
 
 关联: arms-<task-id>
-指纹: <convergence_message> @ <convergence_view>
+指纹: <norm_message> @ <view.name>
 原因: <root cause 一行,与 arms findings.md 一致>
 方案: <fix approach 一行,采用方案 A 或 B>
 
@@ -1034,10 +1034,13 @@ team-lead 用 SendMessage 派发，消息必含以下参数:
 
 ### 7 步闭环（按顺序执行）
 
-#### Step 1: 确认参数
+#### Step 1: 确认参数 + 建任务文件夹
 
-- 检查 team-lead 消息含 pid / 凭证 / logstore 等关键字段
-- 缺任一 → SendMessage(team-lead) 报告"参数不全: <字段名>",结束本次任务
+1. 检查 team-lead 消息含 pid / 凭证 / logstore 等关键字段。缺任一 → SendMessage(team-lead) 报告"参数不全: <字段名>",结束本次任务
+2. **生成任务 ID**: `arms-<YYYYMMDD>-<NNN>`,NNN 是同日递增编号(可以从 `ls .plans/<project>/arms/arms-<YYYYMMDD>-*` 数已有数+1,无则 001)
+3. **建任务文件夹骨架**: 在 `.plans/<project>/arms/<task-id>/` 下创建空的 `task_plan.md` + `progress.md`(用 Write 工具,各写一行 frontmatter / 标题即可)。findings.md / fingerprint.md / resolution.md 在后续 step 写
+
+这样 step 3+ 可以直接往 `<task-id>/progress.md` 记日志。
 
 #### Step 2: 历史对比（grep 指纹库）
 
@@ -1048,42 +1051,119 @@ team-lead 用 SendMessage 派发，消息必含以下参数:
 
 #### Step 3: SLS 查询 RUM exception 事件
 
-1. 确认 Python SDK 可用（`pip install aliyun-log-python-sdk` 一次性）:
-   ```
-   python3 -c "from aliyun.log import LogClient" 2>&1
-   ```
-   ImportError → 执行 `pip install aliyun-log-python-sdk`,再次确认。装失败 → escalate。
+##### 3.1 确认 Python SDK 可用
 
-2. 用 Bash 工具执行查询（注意参数从 team-lead 消息中带入,**不要硬编码**）:
-   ```
-   python3 <<'PY'
-   from aliyun.log import LogClient, GetLogsRequest
-   import time, json
-   client = LogClient(f"https://{REGION}.log.aliyuncs.com", AK_ID, AK_SECRET)
-   to_ts = int(time.time())
-   from_ts = to_ts - DAYS * 86400
-   query = f"app.id:{PID} AND event_type:exception AND app.env:{ENV}"
-   if KEYWORDS:
-       query += f' AND "{KEYWORDS}"'
-   req = GetLogsRequest(PROJECT, LOGSTORE, fromTime=from_ts, toTime=to_ts,
-                        query=query, line=500)
-   resp = client.get_logs(req)
-   for log in resp.get_logs():
-       print(json.dumps(log.get_contents(), ensure_ascii=False))
-   PY
-   ```
+```bash
+python3 -c "from aliyun.log import LogClient" 2>&1
+```
 
-3. 同一种错误失败 3 次 → escalate team-lead,带错误信息,**不静默重试**。
+- 输出空(import 成功)→ 继续
+- `ModuleNotFoundError` → 执行 **`pip3 install --user aliyun-log-python-sdk`**(注意 `--user` 标志,macOS / Linux 系统 Python 无 `--user` 会权限失败)。装完再次确认。装失败 → escalate
+- 安装时如出现 `WARNING: ... not on PATH` → 不影响 import,可忽略;但如果用户后续手动跑命令需要,提示一次"建议把 `~/Library/Python/3.11/bin`(或对应版本)加入 PATH"
+
+##### 3.2 探测 SLS 字段(首次/字段名不确定时)
+
+ARMS RUM 字段名因 SDK 版本和 SLS 配置可能略有差异。**首次接入时,先查 1 行样本**,确认字段名:
+
+```bash
+python3 <<'PY'
+from aliyun.log import LogClient, GetLogsRequest
+import time, json, os
+client = LogClient(f"https://{REGION}.log.aliyuncs.com", AK_ID, AK_SECRET)
+to_ts = int(time.time())
+from_ts = to_ts - 7 * 86400
+req = GetLogsRequest(PROJECT, LOGSTORE, fromTime=from_ts, toTime=to_ts,
+                     query=f"app.id:{PID} AND event_type:exception",
+                     line=1)
+resp = client.get_logs(req)
+logs = list(resp.get_logs())
+if logs:
+    keys = sorted(logs[0].get_contents().keys())
+    print("AVAILABLE_FIELDS:", keys)
+else:
+    print("NO_LOGS_IN_WINDOW")
+PY
+```
+
+把输出的字段名记在 `<task-id>/progress.md` 一行(`AVAILABLE_FIELDS: [...]`),后续步骤的字段引用以此为准。**官方字段名是 `exception.message`、`exception.stack`、`exception.type`、`view.name`、`view.id`、`session.id`、`app.id`、`app.env`、`event_type`、`event_id`** ——但聚合后缀字段(如 `.convergence`)**是否存在因部署而异,不要假设**。
+
+##### 3.3 正式查询
+
+```bash
+python3 <<'PY'
+from aliyun.log import LogClient, GetLogsRequest, LogException
+import time, json, sys
+client = LogClient(f"https://{REGION}.log.aliyuncs.com", AK_ID, AK_SECRET)
+to_ts = int(time.time())
+from_ts = to_ts - DAYS * 86400
+query = f"app.id:{PID} AND event_type:exception"
+if ENV != "all":
+    query += f" AND app.env:{ENV}"
+if KEYWORDS:
+    query += f' AND "{KEYWORDS}"'
+req = GetLogsRequest(PROJECT, LOGSTORE, fromTime=from_ts, toTime=to_ts,
+                     query=query, line=500)
+try:
+    resp = client.get_logs(req)
+    for log in resp.get_logs():
+        print(json.dumps(log.get_contents(), ensure_ascii=False))
+except LogException as e:
+    # SLS 结构化错误: errorCode 决定后续处理
+    print(f"LogException: code={e.get_error_code()} message={e.get_error_message()}",
+          file=sys.stderr)
+    sys.exit(2)
+PY
+```
+
+##### 3.4 错误分类(看 SLS errorCode)
+
+| errorCode | 含义 | 处理 |
+|-----------|------|------|
+| `ProjectNotExist` / `LogStoreNotExist` | 配置错 | 立即 escalate,**不重试**(配错重试无用) |
+| `Unauthorized` / `SignatureNotMatch` | AK/Secret 错或权限不足 | 立即 escalate,提示用户检查 RAM 子账号策略 |
+| `WriteQuotaExceed` / `ReadQuotaExceed` | 限流 | 等 60 秒重试,**最多 3 次** |
+| 其他 | 未知 | 重试 1 次,仍错则 escalate |
+
+非 LogException 错误(如网络):正常 3-Strike,3 次后 escalate。
 
 #### Step 4: 聚合分析
 
-1. 按 `exception.message.convergence` 字段分组计数（聚合后已去参数差异）
-2. 过滤 CLAUDE.md `arms_ignore_patterns` 中列出的已知噪声
-3. 对每种高频异常:
-   - 取 `exception.stack` 解析出文件:行号
-   - Read 项目源码对应位置
-   - 交叉判断根因（API 超时 / 空值 / 边界条件 / 第三方库版本 / ...）
-4. 若 3 次仍定位不出根因 → findings 标记 `[NEEDS-HUMAN]`,继续完成可写部分,然后 escalate
+##### 4.1 Python 端归一化(替代假设的 .convergence 字段)
+
+ARMS 后端的 convergence 机制主要作用于 URL/接口路径(`view.name` 通常已归一化),但 `exception.message` 在 SLS 明细表中是**原始消息**(可能带 session ID / 时间戳 / 用户输入)。在 Python 中做轻量归一化作为分组键:
+
+```python
+import re
+
+def normalize_message(msg: str) -> str:
+    if not msg:
+        return ""
+    # 去 UUID
+    msg = re.sub(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<uuid>", msg, flags=re.I)
+    # 去时间戳 (ISO-ish / unix ms)
+    msg = re.sub(r"\b\d{10,13}\b", "<ts>", msg)
+    # 去十进制串 ID (>=6 位避免误伤 HTTP 状态码)
+    msg = re.sub(r"\b\d{6,}\b", "<id>", msg)
+    # 截断长度
+    return msg[:120]
+```
+
+##### 4.2 分组与过滤
+
+1. 把所有 exception 事件按 `(normalize_message(exception.message), view.name)` 分组,计数
+2. 过滤 CLAUDE.md `arms_ignore_patterns` 中列出的已知噪声(子串匹配 normalize 后的消息)
+3. 按计数倒序,取 Top 5-10 做后续根因分析
+
+##### 4.3 根因定位
+
+对每种高频异常:
+- 取 `exception.stack`(原始 JS 堆栈,通常含 sourcemap-uri 或压缩后位置)
+- 解析出 **文件:行号**(如 `chunk-vendors.xxx.js:631:67170` 是压缩位置,sourcemap 解开后映射到源文件)
+- 若项目有 sourcemap 文件(查 `dist/*.map`)→ 用 sourcemap 解 → Read 源码
+- 若无 sourcemap → 在 `src/` 下 grep 错误消息字符串(去掉 `<uuid>` 等占位)定位
+- 交叉判断根因(API 超时 / 空值 / 边界条件 / 第三方库版本 / ...)
+
+若 3 次仍定位不出根因 → findings 标记 `[NEEDS-HUMAN]`,继续完成可写部分,然后 escalate
 
 #### Step 5: 写 findings.md
 
@@ -1116,7 +1196,7 @@ team-lead 用 SendMessage 派发，消息必含以下参数:
 SendMessage(team-lead):
 ARMS 分析完成:
 - 应用: <app_name> (<env>)
-- 异常聚合: N 种, 最高频 "<convergence_message>" (X 次)
+- 异常聚合: N 种, 最高频 "<norm_message>" (X 次)
 - 回溯窗口: <days> 天
 - 推荐派单: <backend-dev | frontend-dev>
 - 分析报告: .plans/<project>/arms/<task-id>/findings.md
@@ -1188,7 +1268,7 @@ ARMS 分析完成:
 ## arms-<YYYYMMDD>-<NNN>
 - Status: analyzed | resolved | ignored
 - Report: [findings.md](arms-<YYYYMMDD>-<NNN>/findings.md)
-- Fingerprint: <convergence_message> @ <convergence_view>
+- Fingerprint: <norm_message> @ <view.name>
 - Summary: <一行根因摘要>
 ```
 ```
