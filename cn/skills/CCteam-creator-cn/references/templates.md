@@ -320,35 +320,57 @@ ARMS 在 CCteam 中有两条独立巡检通路,各自有不同的配置块:
 
 `/arms` 斜杠命令 / 自然语言"查一下 arms"触发,arms agent 直接走 SLS Python SDK 拉 RUM exception,自带 findings + 指纹归档闭环。
 
+**设计原则**: 所有密钥引用 `.env`(必须 `.gitignore`),CLAUDE.md 不含明文。team-lead 在 §3 解析参数时 Read 项目根 `.env` 把 `${VAR}` 替换为真值,然后用 SendMessage 把真值传给 arms agent(arms 收到时已是真值,不需要自己解 .env)。
+
 ```
 ## ARMS 巡检配置 — 即时巡检（arms agent）
 
-- pid: <ARMS RUM 应用 ID, 如 c67ee5ri5a@a02e69a18ed6a39>
+- pid: ${VITE_APP_ARMS_PID}
+  # 获取: 阿里云控制台 → ARMS → 用户体验监控 → 应用列表 → 应用 ID(如 c67ee5ri5a@a02e69a18ed6a39)
+  # 若前端 RUM SDK 已用同一 PID(常见,见 src/utils/arms.ts ENDPOINT),保留 VITE_ 前缀
+  # 若 PID 不需进客户端 bundle,可改成无 VITE_ 前缀变量名(如 ARMS_PID)
+
 - app_name: <可读应用名, 仅用于日志>
 - default_env: prod                    # 用户不显式指定时的默认环境
 - default_days: 7                      # 默认回溯天数
 
-# SLS 凭证（arms agent 直接查 SLS logstore-rum）
-- sls_region: cn-hangzhou              # SLS endpoint 所在 region
-- sls_project: <SLS project 名>
-- sls_logstore: <RUM logstore 名, 通常含 rum>
-- sls_ak_id: <Access Key ID>
-- sls_ak_secret: <Access Key Secret>
+# SLS 链路定位(arms agent 直接查 SLS logstore-rum)
+- sls_region: ${SLS_REGION}
+  # 获取: 阿里云控制台 → ARMS → 应用设置 → 数据存储 → SLS 链路 → region
+  # 通常与 RUM endpoint 后缀对应: -cn → cn-hangzhou, -shanghai → cn-shanghai
 
-# 噪声过滤（arms agent step 4 用,可选）
+- sls_project: ${SLS_PROJECT}
+  # 获取: 同上 → SLS project 名(类似 proj-xtrace-<uid>-<region>)
+
+- sls_logstore: ${SLS_LOGSTORE}
+  # 获取: 同上 → logstore 名(通常含 'rum')
+
+# 只读 RAM 子账号凭证(arms agent 只读 SLS,严禁写)
+- sls_ak_id: ${ARMS_AK_ID}
+- sls_ak_secret: ${ARMS_AK_SECRET}
+  # 获取: 阿里云控制台 → RAM → 用户管理 → 创建子账号 → AccessKey + 附加策略
+  # 推荐策略: AliyunLogReadOnlyAccess(SLS 全读) 或限定到本 logstore 的自定义策略
+  # 若项目已有 sourcemap 上传 AK(`ARMS_AK_ID` / `ARMS_AK_SECRET` 在 .env 里),且该子账号策略含 SLS 读 → 直接复用,无需新建
+
+# 噪声过滤(arms agent step 4 用,可选)
 - arms_ignore_patterns:
   - "ResizeObserver loop limit"
   - "Script error."
   - "<其他已知噪声的 norm_message 子串>"
 ```
 
-> **凭证安全**:
+> **凭证安全(强制)**:
 > - sls_ak_id / sls_ak_secret 是只读 AK,推荐用 RAM 子账号 + 只读策略
+> - **.env 必须 .gitignore** — 否则 git add . 会 staged 凭证;SKILL.md Step 1.2.4 会校验
+> - **CLAUDE.md 不允许明文** — 始终 `${VAR}` 引用,因为 CLAUDE.md 每次进 Claude Code 上下文,有 prompt injection 风险
 > - arms agent 仅在会话内使用,**不要**写到 `.plans/` 文件
-> - 推荐 AK 范围: `aliyun-log-read-only`(SLS 全读) + 必要的 ARMS RUM 应用列表权限
+> - 推荐 AK 范围: `AliyunLogReadOnlyAccess`(SLS 全读) + 必要的 ARMS RUM 应用列表权限
 
-> **如何获取 pid**: 阿里云控制台 → ARMS → 用户体验监控 → 应用列表,复制目标应用的 "应用 ID"。
-> **如何获取 sls_project / sls_logstore**: 阿里云控制台 → ARMS 应用设置 → 数据存储 → SLS 链路,记下 project 和 logstore 名。
+> **第一次设置**:
+> 1. 项目根 `.env` 加 6 个变量(`VITE_APP_ARMS_PID` / `SLS_REGION` / `SLS_PROJECT` / `SLS_LOGSTORE` / `ARMS_AK_ID` / `ARMS_AK_SECRET`),按上面注释获取真值
+> 2. 确认 `.gitignore` 含 `.env`(无则加)
+> 3. 在项目 CLAUDE.md 末尾加 `## ARMS 巡检配置 — 即时巡检（arms agent）` section,**只填 `${VAR}` 引用,不要复制真值**
+> 4. 跑 `/arms` 验证。team-lead 在 §3 会 Read .env 解引用,arms agent 收到的是真值,但 .env / CLAUDE.md 都不会泄露
 
 ## 文件结构
 

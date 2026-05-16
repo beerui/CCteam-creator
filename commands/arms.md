@@ -24,17 +24,27 @@ description: ARMS 即时巡检 — 查 SLS RUM 异常、分析根因、自动派
 
 > **为什么要 hydrate**: V5 实测发现 — snapshot 文件存在 ≠ live team 存在。`team_name=<project>` 参数指代的是 live team(`~/.claude/teams/<project>/config.json`),如果 live team 没 hydrate,§4 的 `Agent(team_name=...)` 会**silently 失败或行为不可预期**(实测会创建 arms-2/arms-3 等不期望的命名)。先 hydrate 确保 §4 spawn 在正确的团队上下文里。
 
-## 2. 检查 + 补全 ARMS 即时巡检配置(CLAUDE.md)
+## 2. 检查 + 补全 ARMS 即时巡检配置(.env + CLAUDE.md)
+
+**设计原则(0.1.6 起)**: 真值落 `.env`(被 `.gitignore`),CLAUDE.md 只落 `${VAR}` 引用。这两个文件配合形成"配置 + 凭证"分离:
+
+| 文件 | 角色 | 内容 |
+|---|---|---|
+| `.env` | 凭证 / 配置真值 | `ARMS_AK_ID='...'` / `SLS_PROJECT='...'` 等真值 |
+| `CLAUDE.md` `## ARMS 巡检配置` 节 | 引用 + 文档 | `sls_ak_id: ${ARMS_AK_ID}` + 获取方式注释 |
 
 读项目 CLAUDE.md,在文中 grep `## ARMS 巡检配置 — 即时巡检（arms agent）`:
 
-- **节存在且齐全**(pid + sls_region + sls_project + sls_logstore + sls_ak_id + sls_ak_secret 全有,且**非占位值**) → 直接读出参数,进入 §3
-- **节缺失 / 字段不全 / 字段值是占位** → **交互式补全**:
+- **节存在且全 `${VAR}` 引用**(pid + sls_region + sls_project + sls_logstore + sls_ak_id + sls_ak_secret 全是 `${VAR}` 形式) → 验证 `.env` 含对应变量(Read .env 解析),进入 §3
+- **节缺失 / 引用不全 / 字段值是占位 / 字段值是明文** → **交互式补全 + 落 .env**:
 
   **占位识别**(任一为真即视为缺失):
   - 包含 `<...>` 包裹(如 `<your-pid>`、`<ACCESS_KEY>`)
   - 等于 `your-...` / `xxx` / `TODO` / `FIXME` / `your-pid-here` 等明显占位
   - 长度 < 8 字符(凭证字段)
+
+  **明文识别**(0.1.6 新增):
+  - 字段值**不**是 `${VAR}` 形式且不是占位 → 视为明文,**降级处理**: 把明文搬到 .env 对应变量,CLAUDE.md 改为 `${VAR}` 引用;提醒用户"已把明文从 CLAUDE.md 移到 .env"
 
   **补全流程**:
 
@@ -47,22 +57,52 @@ description: ARMS 即时巡检 — 查 SLS RUM 异常、分析根因、自动派
        2) SLS project 名
        3) SLS logstore 名 (通常含 `rum`)"
      - 收齐后再问凭证:
-       "请把只读 RAM 子账号的 **AK ID** 和 **AK Secret** 粘进来(两个值,各一行)。建议用只读策略,如 `aliyun-log-read-only`"
-  3. **写入 CLAUDE.md**: 用 Edit 工具在 CLAUDE.md 末尾追加(若已有该 section 则替换 section 而非整文件覆盖),内容用 references/templates.md § 即时巡检（arms agent）的模板填充。**写完确认一次,然后继续 §3**
-  4. 顺带提醒用户: "已把配置写入 CLAUDE.md。建议下次把 `sls_ak_*` 改为环境变量引用(如 `${SLS_AK_ID}`)以提升安全性,但现在我会用明文凭证跑本次分析"
+       "请把只读 RAM 子账号的 **AK ID** 和 **AK Secret** 粘进来(两个值,各一行)。建议用只读策略,如 `AliyunLogReadOnlyAccess`"
+  3. **写入 .env**(项目根)使用约定变量名:
+     ```
+     VITE_APP_ARMS_PID='<pid>'             # VITE_ 前缀因为 src/utils/arms.ts 也用同 PID(常见)
+     SLS_REGION='<region>'
+     SLS_PROJECT='<project>'
+     SLS_LOGSTORE='<logstore>'
+     ARMS_AK_ID='<ak_id>'                  # 复用 sourcemap 上传变量名,若该子账号 RAM 策略已含 SLS 读
+     ARMS_AK_SECRET='<ak_secret>'
+     ```
+     - 用 `Read .env` 看现有内容 → 用 Edit 在末尾追加(若文件不存在 → Write 新建)
+  4. **确保 .gitignore 含 `.env`**: Read `.gitignore` grep `^.env$` → 没有则 Edit 追加。**这一步不可跳过**,否则下次 `git add .` 会 staged 凭证
+  5. **写入 CLAUDE.md**: 用 Edit 在末尾追加 `## ARMS 巡检配置 — 即时巡检（arms agent）` section,内容**只含 `${VAR}` 引用 + 获取方式注释**(用 references/templates.md § 即时巡检模板填充)。**严禁**把真值复制进 CLAUDE.md。
+  6. 顺带提醒用户:
+     ```
+     已完成 ARMS 配置三件套:
+     - .env (含真值, 被 .gitignore 保护)
+     - .gitignore (已加 .env)
+     - CLAUDE.md (含 ${} 引用 + 获取方式注释)
+
+     凭证只在 team-lead 解引用时存在于内存,不会写到 .plans/。
+     ```
 
   > **可选**: 如果项目装了 `arms-rum` MCP(检查工具列表是否含 `mcp__arms-rum__GetRumApps`),且用户不知道 PID,可以直接调 GetRumApps 拉应用列表,用 **AskUserQuestion** 让用户选,**省去手输 PID 这一步**。
 
-## 3. 解析参数
+## 3. 解析参数 + 解引用 .env
 
 从用户附带的自然语言或显式参数中识别(参数可省,用默认):
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `pid` | CLAUDE.md `pid` | ARMS RUM 应用 ID |
+| `pid` | CLAUDE.md `pid` (解引用 .env) | ARMS RUM 应用 ID |
 | `env` | `default_env` (CLAUDE.md) → `prod` | 环境过滤(prod/daily/pre/all);先读 CLAUDE.md `default_env` 字段,缺失才用硬编码 `prod`;显式指定才查非生产 |
 | `days` | 7 | 回溯天数 |
 | `keywords` | 空 | 错误消息子串过滤(透传给 SLS query) |
+
+**关键: ${VAR} 解引用步骤(0.1.6 新)**
+
+CLAUDE.md ARMS 节里的 `${VAR}` 引用必须**在 team-lead 这一层解开**,把真值传给 arms agent(arms 收到时已是真值,不需要自己解 .env):
+
+1. Read 项目根 `.env`,parse 成 `key=value` 字典(去引号、去空白)
+2. 遍历 CLAUDE.md ARMS 节里所有 `${VAR}` 出现位置,从字典取值替换
+3. 任一引用解不出(变量在 .env 缺失)→ **escalate**,提示用户"`.env` 缺 `<VAR_NAME>`,请按 CLAUDE.md 注释填好后重试"
+4. 解完后,真值**只存在于 team-lead 内存**,用 SendMessage / Agent prompt 时传给 arms;**绝不**回写 CLAUDE.md 或 .plans/
+
+> **为什么 team-lead 解引用,不让 arms 解**: arms 是 general-purpose subagent,默认不知道 .env 规则、不熟悉 python-dotenv 等库,且 team-lead 解一次给所有下游用比每个 agent 自己解更高效安全。这是控制平面 / 数据平面分离的体现。
 
 **示例语义识别**:
 - "/arms" → 默认全套

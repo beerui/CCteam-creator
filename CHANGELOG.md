@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 0.1.6 - 2026-05-16
+
+> Patch: ARMS 凭证管理从"明文落 CLAUDE.md"改为".env 引用",安全反模式 → 安全默认。
+> Patch: ARMS credential management switched from plaintext-in-CLAUDE.md to `${VAR}`-from-`.env`. Security anti-pattern → security default.
+
+### Changed / 变更(安全模型升级)
+
+- **ARMS 配置改为 `.env` 引用 + CLAUDE.md `${VAR}` 双文件配合**(原 0.1.5 是单文件明文落 CLAUDE.md)。
+
+  **Why**: 0.1.5 设计在 CLAUDE.md 落明文 AK 是反模式 — CLAUDE.md 每次会进 Claude Code 上下文,凭证暴露在 prompt 中、可能被 prompt injection 利用、且 git commit 时容易误提交。把凭证迁移到 `.env`(必须 `.gitignore`),CLAUDE.md 只引用,team-lead 在 §3 解析参数时**临时**解引用传给 arms agent,真值仅存在于 team-lead 内存。
+  ARMS credentials moved out of CLAUDE.md (which is always in LLM context) into `.env` (which must be gitignored). team-lead dereferences `${VAR}` only at §3 dispatch time, value lives in memory only.
+
+- **`commands/arms.md §2` 重写为"三件套补全"**:
+  1. AskUserQuestion + 文本输入收集真值
+  2. 写真值到项目根 `.env`(变量名标准化: `VITE_APP_ARMS_PID` / `SLS_REGION` / `SLS_PROJECT` / `SLS_LOGSTORE` / `ARMS_AK_ID` / `ARMS_AK_SECRET`)
+  3. **确保 `.gitignore` 含 `.env`**(不可跳过 — 否则下次 `git add .` staged 凭证)
+  4. CLAUDE.md 末尾写 `## ARMS 巡检配置` section,**只含 `${VAR}` 引用 + 获取方式注释**
+  5. 占位识别新增"明文识别"分支: CLAUDE.md 字段是明文 → 降级处理(搬到 .env + 改引用)
+
+- **`commands/arms.md §3` 加 `${VAR}` 解引用步骤**: team-lead Read .env → parse 成字典 → 替换 CLAUDE.md ARMS 节里的 `${VAR}` 引用 → 真值通过 SendMessage / Agent prompt 传给 arms。控制平面(team-lead 解凭证)/ 数据平面(arms 用凭证)分离。
+
+- **`templates.md § 即时巡检（arms agent）` 模板** 全面改写: 默认值是 `${VITE_APP_ARMS_PID}` 等引用 + 每行配阿里云控制台获取方式注释 + "第一次设置 checklist"。
+
+### Notes / 备注
+
+- **CN-only**: 同 0.1.4 / 0.1.5,EN skill 暂未同步。
+- **向后兼容路径**: 旧版本(0.1.5 及之前)用户的 CLAUDE.md 仍可能含明文 AK。0.1.6 §2 新增"明文识别"分支会**自动迁移** — 检测到明文 → 把明文搬到 .env + CLAUDE.md 改引用 + .gitignore 加 .env,提示用户"已迁移,建议 rotate 已暴露的 AK"。
+- **安全建议**: 升级到 0.1.6 后,**强烈建议 rotate** 所有之前在 CLAUDE.md 出现过的 AK — 它已经在多个 prompt 上下文中存在过,默认视为 exposed。
+- **真实项目验证**: 0.1.6 是在 `daji-customer-service` 真实项目上做 0.1.5 验证时,用户发现"我希望放到 .env 中统一管理"主动提出的安全升级——又一个 spec-only review 看不到的盲点,只有真实使用才暴露。
+
 ## 0.1.5 - 2026-05-16
 
 > Patch: 7 处 V5 (`/arms` 命令)缺口修复,均由 `daji-customer-service` 真实项目端到端验证暴露,**不是设计审视产物**。
