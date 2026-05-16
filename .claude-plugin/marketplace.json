@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Multi-agent team orchestration plugins for Claude Code, with Aliyun ecosystem integration.",
-    "version": "0.1.7"
+    "version": "0.2.0"
   },
   "plugins": [
     {

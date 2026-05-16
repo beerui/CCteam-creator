@@ -110,6 +110,8 @@ CLAUDE.md ARMS 节里的 `${VAR}` 引用必须**在 team-lead 这一层解开**,
 - "/arms days=1" / "最近 1 天" → days=1
 - "/arms keywords=验证码" / "查含验证码的错误" → keywords=验证码
 
+**单点修复模式触发(0.2.0 新增)**: 检查首位置参,若以 `http://` 或 `https://` 开头 → 走 §10 单点修复路径,**不要**继续 §4-§9 批量流程。
+
 ## 4. 检查 + 补全 arms 角色
 
 **三层检查 + 健康验证**(snapshot 花名册 vs live team 成员 vs liveness):
@@ -269,3 +271,144 @@ SendMessage(to: "arms"):
 - **不替代 CRON 巡检**: `/arms` 是"现在想立刻看一眼"的场景;每日定时扫描请用 `/ccteam-scan` (走 bug-triage + intake 流)
 - **凭证只在会话内**: arms agent 不持久化 ak_secret,不会写入 fingerprint.md / findings.md
 - **频繁调用注意 SLS 配额**: SLS 查询有 RPS 上限,默认 days=7 一次查 500 条,正常使用不会触限
+
+## 10. 单点修复模式(targeted fix, 0.2.0 新增)
+
+当 §3 检测到首位置参为 `http(s)://...` 时走本节;§1(团队 hydrate)+ §2(三件套补全)+ §4 第一次的健康检查仍执行,§3 之后分支到这里。
+
+### 10.1 解析 ARMS URL
+
+ARMS rum-explorer URL 形如:
+
+```
+https://arms.console.aliyun.com/?spm=...#/rum/rum-explorer/cn-hangzhou
+  ?groupKey=exception
+  &from=now-1h&to=now
+  &refresh=off
+  &filters=%5B%7B%22key%22%3A%22app.id%22%2C%22opt%22%3A%22contain%22%2C%22value%22%3A%5B%22<PID>%22%5D%7D%5D
+```
+
+team-lead 用 Bash + python3 解析(不需要新模块):
+
+```python
+import urllib.parse, json, re, time
+from datetime import datetime
+
+raw = "<user 给的 URL>"
+fragment = raw.split('#', 1)[1] if '#' in raw else raw   # hash 后才是真 query
+path_query = fragment.split('?', 1)
+path = path_query[0]
+qs = path_query[1] if len(path_query) > 1 else ""
+
+m = re.search(r'/rum/rum-explorer/([^/?]+)', path)
+region = m.group(1) if m else None
+params = urllib.parse.parse_qs(qs)
+
+def parse_time(s, now_ts):
+    if not s: return None
+    if s == "now": return now_ts
+    m = re.fullmatch(r'now-(\d+)([smhd])', s)
+    if m:
+        n, unit = int(m.group(1)), m.group(2)
+        mult = {"s":1, "m":60, "h":3600, "d":86400}[unit]
+        return now_ts - n * mult
+    if s.isdigit():
+        v = int(s)
+        return v // 1000 if v > 10**12 else v   # ms → s
+    try:
+        return int(datetime.fromisoformat(s).timestamp())
+    except ValueError:
+        return None
+
+now_ts = int(time.time())
+from_ts = parse_time(params.get('from', [None])[0], now_ts)
+to_ts = parse_time(params.get('to', ['now'])[0], now_ts)
+
+filters_raw = params.get('filters', ['[]'])[0]
+filters = json.loads(filters_raw) if filters_raw else []
+app_id = next((f['value'][0] for f in filters
+               if f.get('key') == 'app.id' and f.get('value')), None)
+env = next((f['value'][0] for f in filters
+            if f.get('key') == 'app.env' and f.get('value')), None)
+```
+
+解析失败处理(任一为真 → escalate 给用户,**不要继续也不要 fallback batch**):
+
+- 域不是 `arms.console.aliyun.com` → "非 ARMS 控制台 URL"
+- 路径不含 `/rum/rum-explorer/` → "请给 RUM exception 浏览页 URL,APM 链路 URL 不支持"
+- `app_id` 为空 → "URL 未含 app.id 过滤,请在控制台先选定应用"
+- `from_ts` 为空 → "URL 缺 from 参数,无法确定时间窗口"
+- `region` 与 CLAUDE.md `sls_region`(解引用后)不符 → "URL region=X, .env SLS_REGION=Y,请确认是同一应用"
+- `app_id` 与 CLAUDE.md `pid`(解引用 .env 后)不符 → AskUserQuestion 让用户决定(切配置 / 取消)
+
+### 10.2 解析可选 keywords
+
+`keywords` 是可选参数。从原始命令文本(URL 之后的部分)正则提取:
+
+```python
+m = re.search(r'keywords\s*=\s*(?:"([^"]*)"|(\S+))', user_input)
+keywords = (m.group(1) or m.group(2)) if m else None
+```
+
+缺省 → SLS query 不加关键词过滤(只靠 URL 时间窗口 + app.id 收敛)。
+
+### 10.3 派单给 arms(targeted mode)
+
+按 §4 的三层检查 + 健康验证 spawn 或复用 arms(逻辑不变),SendMessage 派单消息追加 5 个 targeted 字段:
+
+```
+任务: ARMS 即时巡检
+- pid: <app_id>             # URL 解析的优先,需与 .env pid 一致
+- ak_id / ak_secret: ...    # .env 解引用
+- region / project / logstore: ...
+
+(targeted 模式专属)
+- mode: targeted
+- target_app_id: <URL 解析 app_id>
+- target_from_ts: <unix s>
+- target_to_ts: <unix s>
+- target_env: <URL 解析 env, 空字符串表示 all>
+- keywords: <用户给的, 空字符串表示无关键词过滤>
+
+按 onboarding § arms 的 7 步流程执行,**注意 mode=targeted,见 onboarding § 模式与差异**。
+```
+
+### 10.4 收到 arms 回报后
+
+mode=targeted 下 arms 回报有 3 种形态:
+
+**形态 A: 0 命中**
+
+```
+ARMS 单点查询: 0 命中
+- URL 时间窗口: <from_ts> ~ <to_ts>
+- keywords: <值或空>
+```
+
+team-lead 告诉用户:"URL/keywords 无匹配 exception 事件,请精化 keywords 或扩大 URL 时间窗口"。**不写 findings.md,不创建任务文件夹**(arms agent 已在 Step 4.2 清理半成品)。
+
+**形态 B: 1 fingerprint(走完 7 步)**
+
+与 §6 批量模式回报相同(含 findings_path / branch / 推荐派单)。team-lead 按 §6 派 dev。
+
+**形态 C: ≥2 fingerprints(暂停等用户选)**
+
+```
+ARMS 单点查询: N 命中 fingerprint,等待选择:
+1. "<norm_message_A>" @ <view.name_A> (×<count>, 最新 <timestamp>)
+   样本堆栈: <stack 第 1 行>
+2. "<norm_message_B>" @ <view.name_B> (×<count>, 最新 <timestamp>)
+   样本堆栈: <stack 第 1 行>
+...
+```
+
+team-lead 用 AskUserQuestion 列出 N 个候选(N ≥ 5 时附加"加 keywords 缩范围重跑"选项):
+
+- 用户选第 i 个 → SendMessage(arms) "请按 fingerprint #i 继续 Step 4.3+",arms 走完剩余 step
+- 用户选"加 keywords 重跑" → 问用户新 keywords → SendMessage(arms) "请用 keywords=... 重跑 Step 3.3"
+- 用户选"取消" → SendMessage(arms) "本次任务取消,清理半成品任务文件夹"
+
+### 10.5 后续步骤
+
+形态 B/C 完成 fingerprint 选择后,§7(dev 完成 + reviewer)、§8(总结)、§9(用户决定不修)流程**与批量完全一致**。
+

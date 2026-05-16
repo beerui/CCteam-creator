@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 0.2.0 - 2026-05-17
+
+> Minor: `/arms` 新增单点修复(targeted fix)模式,arms agent 协议扩展 `mode` 字段。
+> Minor: New targeted fix mode for `/arms` via ARMS console URL + optional keywords. arms agent protocol extended with `mode` field.
+
+### Added / 新增
+
+- **`/arms <ARMS_URL> [keywords="..."]`** 单点修复模式
+  - 首位置参以 `http(s)://` 开头触发,自动跳过批量扫描,直接反查 SLS 对应时间窗口里的 exception 事件
+  - 0 命中 → 提示"请精化 keywords 或扩大窗口",不写 findings;1 fingerprint → 自动走完 7 步;≥2 fingerprints → team-lead 用 AskUserQuestion 列候选给用户选 1
+  - 派 dev / reviewer / resolution 流程与批量模式完全一致(本地 commit + 不 push,见 ARMS 子协议)
+  - 实现: `commands/arms.md` §10 self-contained 单点路径;`onboarding.md` arms agent 加"模式与差异"小节
+  Added single-shot targeted fix path: `/arms <URL>` parses time window + filters from ARMS rum-explorer URL, reverse-queries SLS with optional keywords narrowing.
+
+- **arms agent 协议字段扩展**: `mode: batch | targeted`、`target_app_id`、`target_from_ts`、`target_to_ts`、`target_env`(向后兼容,缺省 batch)
+  Protocol fields added for targeted mode; backward compatible.
+
+### Changed / 调整
+
+- `onboarding.md` arms agent Step 5 概览节模板:加可选 `模式 / URL / keywords` 字段
+- `onboarding.md` § Known Pitfalls 加"ARMS URL 单点解析的硬性失败"条目,明确**不要 fallback batch**(否则违反单点初衷)
+
 ## 0.1.7 - 2026-05-16
 
 > Patch: 2 处 0.1.6 真实端到端验证暴露的缺口修复 + platform 限制文档化。

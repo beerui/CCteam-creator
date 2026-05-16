@@ -1051,6 +1051,27 @@ team-lead 用 SendMessage 派发，消息必含以下参数:
 
 参数缺失 → 不重试,立即 escalate（这是 team-lead 没传齐,你重试也没用）。
 
+### 模式与差异(0.2.0 新增)
+
+team-lead 派单消息可能含 `mode` 字段:
+
+- **`mode: batch`(缺省)**: 现有批量窗口扫描,7 步无变化
+- **`mode: targeted`**: 单点修复,7 步有以下差异
+
+| Step | batch 模式 | targeted 模式差异 |
+|---|---|---|
+| 1 任务文件夹 | 不变 | 不变,task-id 仍 `arms-<YYYYMMDD>-<NNN>` |
+| 2 历史对比 | grep archive 预筛 | 不变 |
+| 3.3 SLS 查询 | `query=app.id:{PID} AND event_type:exception`,line=500,fromTime = now - DAYS×86400 | `query=app.id:{target_app_id} AND event_type:exception [+ AND app.env:{target_env} 若有] [+ AND "{keywords}" 若有]`,line=50,fromTime=`target_from_ts`,toTime=`target_to_ts` |
+| 4.1 归一化策略 | 探测 HAS_CONVERGENCE 选 A/B | 不变 |
+| 4.2 分组 | 取 Top 5-10 | 按 fingerprint 计数后分支: **0 命中** → 回报 "0 命中" 给 team-lead,**不写 findings, 不归档, 清理半成品任务文件夹**,任务结束; **1 fingerprint** → 直接 Step 4.3; **≥2 fingerprints** → 回报候选清单(每条含 norm_message / view.name / 次数 / 最新时间 / 一条样本堆栈摘要)给 team-lead **暂停等回选**,team-lead 回 "请按 fingerprint #i 继续 Step 4.3" 才继续 |
+| 4.3 根因 | 对每个 Top 高频异常做 | 仅对 1 条(或 team-lead 选定的那条) |
+| 5 findings.md | 概览/聚合表/根因/方案/派单/历史参考 | 概览节加一行 `模式: 单点修复 (URL: <原 URL>, keywords: <值或空>)`; 异常聚合表只 1 行 |
+| 6 fingerprint + archive | 写 fingerprint.md + archive/index.md 加一行 | 不变(archive 一行就够) |
+| 7 回报 | 标准回报 | 标准回报 + 注明"单点修复" |
+
+**0/N 分支的具体回报格式与 team-lead 二次交互约定见 commands/arms.md §10.4**
+
 ### 7 步闭环（按顺序执行）
 
 #### Step 1: 确认参数 + 建任务文件夹
@@ -1203,7 +1224,7 @@ def normalize_message(msg: str) -> str:
 任务 ID 格式: `arms-<YYYYMMDD>-<NNN>`（同日多次扫描递增）
 
 正文 sections（顺序固定）:
-1. `## 概览` — 应用名 / PID / env / 回溯窗口 / 异常总数
+1. `## 概览` — 应用名 / PID / env / 回溯窗口 或 targeted 时间区间 / 异常总数 / **模式**(batch | targeted,后者附 `URL` 与 `keywords`)
 2. `## 异常聚合表` — Markdown 表（错误聚合 message | env | 主要 view | 次数 | 最新时间）
 3. `## 根因分析` — 按异常逐一: 堆栈 + 源码定位 + 根因结论
 4. `## 修复方案推荐` — 方案 A / 方案 B,每个含具体改动位置
@@ -1323,4 +1344,13 @@ ARMS 分析完成:
   - 0.1.7 §4 加 60 秒 health check + fallback spawn fresh 路径覆盖以上场景
 
 - **`exception.message.convergence` 字段是部署相关的**(0.1.6 已修): ARMS 后端 convergence 机制是否在 SLS 字段中暴露,**因 SLS deployment 而异**。完整 deployment(如 daji-cs)会有 `exception.message.convergence` 字段,精简 deployment 没有。Step 3.2 必须探测 `HAS_CONVERGENCE`,据此选策略 A(用 convergence)或 B(Python normalize fallback)。
+
+- **ARMS URL 单点解析的硬性失败**(0.2.0 新增): targeted 模式下,team-lead 解析 URL 时如果遇到以下情况 → **不要尝试 fallback 走 batch**,直接 escalate 给用户:
+  - 非 `arms.console.aliyun.com` 域(用户拷错链接)
+  - 路径不含 `/rum/rum-explorer/`(可能是 APM trace / dashboards 链接)
+  - 缺 `filters` 中的 `app.id`(用户在控制台没选应用就拷)
+  - 缺 `from` 参数(用户拷的是状态未保存的 URL)
+  - region/app_id 与 .env 不符(可能误粘了别的项目的 URL)
+
+  fallback batch 会让用户以为"我让它修这一条,它却扫了全部"——违反单点初衷。
 ```
