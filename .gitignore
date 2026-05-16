@@ -16,3 +16,4 @@ __pycache__/
 
 # CCteam runtime artifacts — created by this skill in user projects, must never appear in source repo
 .plans/
+.daji-customer-service/
