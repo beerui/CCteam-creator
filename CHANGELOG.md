@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## 0.1.7 - 2026-05-16
+
+> Patch: 2 处 0.1.6 真实端到端验证暴露的缺口修复 + platform 限制文档化。
+> Patch: 2 gaps closed from 0.1.6 real end-to-end validation against `/Users/motou/Desktop/daji-customer-service` + platform limitation documented.
+
+### Fixed / 修复
+
+- **缺口 8: 僵尸 / 完成态 idle / cwd 漂移 member 时盲目复用 → 消息黑洞**
+  0.1.6 §4 假设"team 已有 live arms → 复用"。实测发现 3 类伪 live 状态会让"复用"等于"消息丢进黑洞":
+  - **僵尸 sonnet**: 老 spawn 没装 shutdown 协议教程,只 `read: true` 不响应
+  - **完成态 idle**: 上次任务结束已回报,context 含旧任务记忆,直接复用会重放旧回应
+  - **cwd 漂移**: 上次 spawn 用旧项目路径,本次新路径 ≠ agent 内部记忆的路径
+  → 0.1.7 commands/arms.md §4 加 **步骤 1a 健康检查**: `SendMessage(to: "arms-N", message: "[health-check]...")` + 等 60 秒 → 收到响应才 alive 复用,timeout / 协议错误 / 旧 finding 重放 → stale,fallback 走 spawn fresh。
+  Fixed §4 zombie/stale member detection via SendMessage health-check with 60s timeout.
+
+- **缺口 5 升级修复:`name="arms"` silently rename 治本**
+  0.1.6 用 `name="arms"` 时 Claude Code 遇同名 silent 改名 `arms-2`/`arms-3`。0.1.6 §4 注意到这点但**没真正预防**(只是说"先检查 live members 决定复不复用")。0.1.7 起 spawn 用 `name="arms-<task-id>"` 显式唯一(如 `arms-arms-20260516-001`),与本次任务 1:1 绑定,主对话 SendMessage 用同 name 不出错。
+  Fixed name collision at root by using unique `name="arms-<task-id>"` instead of bare `"arms"`.
+
+### Documented / 文档化(platform 限制 acknowledge)
+
+- **缺口 9: Agent 工具 `model` 参数无 `[1m]` 变体**(platform 限制,无法 fix,只能文档化)
+  Agent 工具 schema enum 硬限制为 `["sonnet", "opus", "haiku"]`,**无法显式选 opus[1m]**。`model: "opus"` 实际 spawn 出来是 200k context 普通 opus,即使主对话(team-lead) 是 `claude-opus-4-7[1m]` 也不继承父级 context。
+  - **实测影响**: arms 7 步典型 token 用量 ~50k(input + output),200k 完全够。除非 SLS 返回 100+ 异常事件需要 1M。daji-cs 本次 16 条异常 token 用量 < 60k
+  - **当前没 workaround**,直到 Claude Code Agent 工具 schema 升级支持 [1m]
+  - → onboarding.md § arms 末尾加 `### Known Pitfalls` 段,acknowledge 此 limitation + 给 token 容量预估 + 缓解建议(line=500 上限、字段筛选)
+  Documented platform-level Agent tool model enum limitation in Known Pitfalls.
+
+### Notes / 备注
+
+- **本轮验证产出**: arms-3 在 `/Users/motou/Desktop/daji-customer-service` 跑出 8153 字节 / 168 行 findings.md,发现 **2 个真实可修 bug** + 2 个业务噪声:
+  - 🚨 `global is not defined` × 3: Vite `define: { global: 'globalThis' }` 把 ARMS SDK 自带 `var global = window` 误替换 → SDK 内部 `_global.global` 失效。修复: 删除 vite.config.ts 这 3 行
+  - 🚨 `conv list failed: 33001` × 9 跨 4 session: 融云 IM `getConversationListByTimestamp` 在 `RC.connect(token)` 完成前被 `useSingleTabGuard` 触发 → IM 未就绪 → 33001。修复: 加 `whenConnected()` wait
+  - 业务噪声: `当前会话已转接` / `token无效或已过期` 各 2 次,建议加 `arms_ignore_patterns` 过滤
+- **0.1.6 修复实测全部 PASS**: env 默认/`${VAR}` 解引用/.convergence 探测/分支名单前缀 — 全在 daji-cs 真实数据上验证通过
+- **0.1.7 验证策略**: 本版本 fix 没有真实项目跑通(因为缺口 8/9 触发条件需要"重复 spawn arms" + "需要 1M 数据"),下一轮 demo 可主动制造场景验证
+- **累计**: 24 个 accumulated acceptance points 中,**13 个**(54%)来自真实使用反馈而非设计审视。`real-user-validation-over-spec-completeness` 记忆继续被印证
+
 ## 0.1.6 - 2026-05-16
 
 > Patch: ARMS 凭证管理从"明文落 CLAUDE.md"改为".env 引用",安全反模式 → 安全默认。

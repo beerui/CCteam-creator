@@ -112,20 +112,37 @@ CLAUDE.md ARMS 节里的 `${VAR}` 引用必须**在 team-lead 这一层解开**,
 
 ## 4. 检查 + 补全 arms 角色
 
-**两层检查**(snapshot 花名册 vs live team 成员):
+**三层检查 + 健康验证**(snapshot 花名册 vs live team 成员 vs liveness):
 
-1. 读 `~/.claude/teams/<project>/config.json` 的 `members` 数组(§1 步骤 3 已 hydrate 保证存在),grep `name == "arms"`:
-   - **有 live arms member** → 已经有活的 arms。进入 §5,`SendMessage(to: "arms")` 派单复用,**不要再 spawn**(spawn 同名会 silently 创建 arms-2/arms-3,产生并发写 .plans/<project>/arms/ 冲突)
-   - **没有 live arms member** → 进入下一步
+1. 读 `~/.claude/teams/<project>/config.json` 的 `members` 数组(§1 步骤 3 已 hydrate 保证存在),grep `name == "arms"`(或任何 `arms-*` 命名):
+   - **有 live arms / arms-N member** → 进入步骤 1a **健康检查**(不能盲目复用)
+   - **没有 live arms member** → 进入步骤 2
+
+   **步骤 1a: 健康检查(0.1.7 新增)**
+
+   live member 可能处于以下任一非健康态:
+   - **僵尸 sonnet** (老 spawn 没装 shutdown 协议教程,只 `read: true` 不响应)
+   - **完成态 idle** (上次任务结束已回报,context 含旧任务记忆,直接复用会重放上次回应)
+   - **跨任务 cwd 漂移** (上次 spawn 用旧项目路径,本次新路径)
+
+   检查策略:
+   ```
+   SendMessage(to: "arms", message: "[health-check] team-lead 询问: 你当前空闲吗? 上次任务 ID? 请用一句话确认 alive")
+   等待 60 秒
+   ```
+
+   - 60 秒内收到 plain text 响应("是,空闲,上次任务 arms-XXXX") → **alive**,记下 alive_member_name(可能是 arms / arms-2 / arms-3),进入 §5 SendMessage 派单复用
+   - 60 秒未响应 / 收到无关响应(如重放旧 findings) / 收到协议错误 → **stale**,走步骤 2 spawn fresh,用**唯一 name** `arms-<task-id>`(如 `arms-arms-20260516-001`)避免与旧 member 冲突
+
 2. 读 `.plans/<project>/team-snapshot.md` 的花名册表,grep `^| arms `:
-   - **arms 在花名册**(snapshot 上但未 hydrate) → 走"花名册 spawn"路径:从 snapshot 入职 prompt section Read 完整 prompt,`Agent(name="arms", team_name="<project>", ..., prompt=<snapshot 的 prompt>)` 加入 team
+   - **arms 在花名册**(snapshot 上但未 hydrate) → 走"花名册 spawn"路径:从 snapshot 入职 prompt section Read 完整 prompt,`Agent(name="arms-<task-id>", team_name="<project>", ..., prompt=<snapshot 的 prompt>)` 加入 team(name 含 task-id 保唯一,避免 silently 改名)
    - **arms 不在花名册** → **不要报错**,走"临时 spawn"路径(参考 /ccteam-scan 对 bug-triage 的处理):
 
   ```
   Agent(
     subagent_type: "general-purpose",
-    model: "sonnet",
-    name: "arms",
+    model: "opus",                      # 推荐 opus, 注意见下方 platform 限制
+    name: "arms-<task-id>",             # 0.1.7: 用 task-id 后缀,避免 silently 改名
     team_name: "<当前团队名,从 team-snapshot 头信息读>",
     description: "ARMS 即时巡检",
     prompt: <把 cn/skills/CCteam-creator-cn/references/onboarding.md § arms 整段 + 本次任务参数(§3 解析得到的 pid/env/days/keywords + CLAUDE.md 的 ak/secret/region/project/logstore)拼起来>,
@@ -135,9 +152,13 @@ CLAUDE.md ARMS 节里的 `${VAR}` 引用必须**在 team-lead 这一层解开**,
 
   spawn 时**带上 team_name 参数**,这样 arms 会加入团队、能用 SendMessage 与其他 agent 通信。本次会话结束后是否保留在花名册由用户决定(见 §8)。
 
-  > **为什么先检查 live members 再检查 snapshot**: V5 实测发现 — spawn 同 name 时 Claude Code **不报错也不复用**,而是 silently 创建 `arms-2`/`arms-3`。结果是多个 arms 并发写 `.plans/<project>/arms/` 同目录,产生竞态冲突。所以必须先 grep live members 数组确认 name 唯一性。
-  
-  > **为什么 `run_in_background: true`**: arms 7 步流程(SDK 装 + SLS 查 + 归一化 + 根因定位 + 写 5 文件 + 归档)在 sonnet 上一般 10-15 分钟,opus 1M 上 5-10 分钟。foreground 会阻塞主对话期间用户无法看进度、无法 abort、无法做别的事。background 后用户可继续与主对话交互,arms 完成自动通知 team-lead 触发 §6。
+  > **0.1.7 起 `name` 用 `arms-<task-id>` 而非纯 `arms`**: 实测 0.1.6 用 `name="arms"` 时,如果 team 里已有同名僵尸/idle member,Claude Code **silently 改名**为 `arms-2`/`arms-3`,导致主对话与 spawn 时期望的 SendMessage `to: "arms"` 收件方不一致。task-id 后缀(如 `arms-arms-20260516-001`)保证 name 与本次任务 1:1 绑定,SendMessage 时也用同 name。
+
+  > **为什么先做健康检查再决定复用**: 0.1.6 §4 假设"有 live member → alive → 复用",**实测发现**有 3 类伪 live 状态(僵尸 sonnet / 完成态 idle / cwd 漂移)会让"复用"实际等于"消息丢进黑洞"。0.1.7 强制 SendMessage ping + 60s 等待,有响应才信。
+
+  > **关于 model 选择**: `model: "opus"` 实际 spawn 出的是 **200k context 普通 opus**,**不是 1M context opus[1m]** — Agent 工具 model enum 限制为 `["sonnet","opus","haiku"]`,无法显式选 [1m]。arms 7 步典型 token 用量 ~50k,200k 完全够;除非 SLS 返回 100+ 异常事件需要 1M。详见 onboarding § Known Pitfalls。
+
+  > **为什么 `run_in_background: true`**: arms 7 步流程(SDK 装 + SLS 查 + 归一化 + 根因定位 + 写 5 文件 + 归档)在 sonnet 上一般 10-15 分钟,opus 上 5-10 分钟。foreground 会阻塞主对话期间用户无法看进度、无法 abort、无法做别的事。background 后用户可继续与主对话交互,arms 完成自动通知 team-lead 触发 §6。
 
   > **临时 spawn 与花名册 spawn 的区别**: 临时 spawn 把任务参数**直接拼进 prompt**(一次性发送);花名册 spawn 是先 SendMessage 然后 agent 按 onboarding 接受任务。临时 spawn 走完即结束,花名册 spawn 留存待复用。
 

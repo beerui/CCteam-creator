@@ -1304,3 +1304,23 @@ ARMS 分析完成:
 - Summary: <一行根因摘要>
 ```
 ```
+
+### Known Pitfalls(0.1.7 起)
+
+- **Agent 工具 `model` 参数无 `[1m]` 变体**(platform 限制): Agent 工具 schema enum 是 `["sonnet", "opus", "haiku"]`,**无法显式选 opus[1m]** 1M context 变体。`model: "opus"` 实际 spawn 出来是 **200k context 普通 opus**,即使主对话(team-lead) 是 `claude-opus-4-7[1m]` 也不继承。
+
+  - **影响**: arms 7 步典型 token 用量 ~50k(输入 onboarding + SLS 几条 + src 几文件,输出 findings),**200k 完全够**。除非 SLS 返回 100+ 异常事件 → 输入 > 200k,需要 1M
+  - **当前没 workaround**(直到 Claude Code 升级 Agent 工具 schema 支持 [1m]),只能 acknowledge
+  - **缓解**: 严格遵守 onboarding § arms 的 `line=500` 上限 + 字段筛选(只取 `exception.message` / `exception.stack` / `view.name` 等关键字段),避免 token 爆炸
+  - 这是 platform 层的 issue,不是 CCteam-creator skill 能 fix 的
+
+- **`name="arms"` spawn 时 silently 改名为 `arms-2`/`arms-N`**(0.1.7 已修): Claude Code spawn 同名 agent 时不报错也不覆盖,而是顺序追加数字后缀。后果:主对话期望 `SendMessage(to: "arms")` 找到的是被改名的 `arms-N`,引发"消息丢进黑洞"假象。0.1.7 起 commands/arms.md §4 用 `name: "arms-<task-id>"` 显式唯一,避免 silent rename。
+
+- **`SendMessage(to: <live member>)` 后无响应**不一定是 agent 卡了,可能是:
+  - **僵尸 agent**(老 sonnet spawn 没装 shutdown 协议教程,只 `read: true` 不响应)
+  - **完成态 idle**(上次任务结束,context 含旧任务记忆,重新发任务可能重放旧回应而不是真正重做)
+  - **cwd / 项目路径漂移**(上次 spawn 时 cwd 是 A,本次新项目路径 B,agent 操作还是 A)
+  - 0.1.7 §4 加 60 秒 health check + fallback spawn fresh 路径覆盖以上场景
+
+- **`exception.message.convergence` 字段是部署相关的**(0.1.6 已修): ARMS 后端 convergence 机制是否在 SLS 字段中暴露,**因 SLS deployment 而异**。完整 deployment(如 daji-cs)会有 `exception.message.convergence` 字段,精简 deployment 没有。Step 3.2 必须探测 `HAS_CONVERGENCE`,据此选策略 A(用 convergence)或 B(Python normalize fallback)。
+```
