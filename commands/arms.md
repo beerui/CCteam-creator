@@ -6,12 +6,23 @@ description: ARMS 即时巡检 — 查 SLS RUM 异常、分析根因、自动派
 
 > **设计原则**: 这个命令是"零门槛即时可用"的——遇到缺失依赖(团队没 arms、CLAUDE.md 没配置)**不要直接报错**,而是**用 AskUserQuestion 交互式补全**。死胡同提示是最差的 UX。
 
-## 1. 前置: 团队存在 & 项目识别
+## 1. 前置: 团队存在 & 项目识别 & live team hydration
 
 1. 读 `.plans/` 下的项目目录,确定 `<project>`(通常一个目录)
 2. 读 `.plans/<project>/team-snapshot.md`:
    - **不存在** → 直接报错: "请先 `/CCteam-creator-cn` 组团后再运行 `/arms`",停止
-   - 存在 → 进入 §2
+   - 存在 → 进入步骤 3
+3. **检查 live team 是否 hydrate**(snapshot 是磁盘状态,live team 是 Claude Code 会话内存里的实例):
+   - 检查 `~/.claude/teams/<project>/config.json` 是否存在
+   - **存在** → 团队已 hydrate,跳到 §2
+   - **不存在** → 团队冷状态(snapshot 在但 Claude Code 没实例化过)。**惰性 hydrate**:
+     ```
+     TeamCreate(team_name="<project>", agent_type="team-lead", description="<project> 项目 - /arms 触发的惰性 hydrate")
+     ```
+     **关键**: 只 TeamCreate 起 shell,**不要复活** snapshot 里的原 4-5 个角色——/arms 不是 team mode 激活,后续只需要临时 spawn arms。原角色保持冷,用户后续真要 team mode 时再走 /CCteam-creator-cn 恢复流程。
+   - hydrate 完成 → 进入 §2
+
+> **为什么要 hydrate**: V5 实测发现 — snapshot 文件存在 ≠ live team 存在。`team_name=<project>` 参数指代的是 live team(`~/.claude/teams/<project>/config.json`),如果 live team 没 hydrate,§4 的 `Agent(team_name=...)` 会**silently 失败或行为不可预期**(实测会创建 arms-2/arms-3 等不期望的命名)。先 hydrate 确保 §4 spawn 在正确的团队上下文里。
 
 ## 2. 检查 + 补全 ARMS 即时巡检配置(CLAUDE.md)
 
@@ -49,7 +60,7 @@ description: ARMS 即时巡检 — 查 SLS RUM 异常、分析根因、自动派
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `pid` | CLAUDE.md `pid` | ARMS RUM 应用 ID |
-| `env` | `prod` | 环境过滤(prod/daily/pre/all);显式指定才查非生产 |
+| `env` | `default_env` (CLAUDE.md) → `prod` | 环境过滤(prod/daily/pre/all);先读 CLAUDE.md `default_env` 字段,缺失才用硬编码 `prod`;显式指定才查非生产 |
 | `days` | 7 | 回溯天数 |
 | `keywords` | 空 | 错误消息子串过滤(透传给 SLS query) |
 
@@ -61,23 +72,32 @@ description: ARMS 即时巡检 — 查 SLS RUM 异常、分析根因、自动派
 
 ## 4. 检查 + 补全 arms 角色
 
-读 team-snapshot.md 的花名册:
+**两层检查**(snapshot 花名册 vs live team 成员):
 
-- **arms 在花名册** → 进入 §5,SendMessage 派单
-- **arms 不在花名册** → **不要报错**,临时 spawn arms(参考 /ccteam-scan 对 bug-triage 的处理):
+1. 读 `~/.claude/teams/<project>/config.json` 的 `members` 数组(§1 步骤 3 已 hydrate 保证存在),grep `name == "arms"`:
+   - **有 live arms member** → 已经有活的 arms。进入 §5,`SendMessage(to: "arms")` 派单复用,**不要再 spawn**(spawn 同名会 silently 创建 arms-2/arms-3,产生并发写 .plans/<project>/arms/ 冲突)
+   - **没有 live arms member** → 进入下一步
+2. 读 `.plans/<project>/team-snapshot.md` 的花名册表,grep `^| arms `:
+   - **arms 在花名册**(snapshot 上但未 hydrate) → 走"花名册 spawn"路径:从 snapshot 入职 prompt section Read 完整 prompt,`Agent(name="arms", team_name="<project>", ..., prompt=<snapshot 的 prompt>)` 加入 team
+   - **arms 不在花名册** → **不要报错**,走"临时 spawn"路径(参考 /ccteam-scan 对 bug-triage 的处理):
 
   ```
   Agent(
     subagent_type: "general-purpose",
     model: "sonnet",
+    name: "arms",
     team_name: "<当前团队名,从 team-snapshot 头信息读>",
     description: "ARMS 即时巡检",
     prompt: <把 cn/skills/CCteam-creator-cn/references/onboarding.md § arms 整段 + 本次任务参数(§3 解析得到的 pid/env/days/keywords + CLAUDE.md 的 ak/secret/region/project/logstore)拼起来>,
-    run_in_background: false
+    run_in_background: true
   )
   ```
 
   spawn 时**带上 team_name 参数**,这样 arms 会加入团队、能用 SendMessage 与其他 agent 通信。本次会话结束后是否保留在花名册由用户决定(见 §8)。
+
+  > **为什么先检查 live members 再检查 snapshot**: V5 实测发现 — spawn 同 name 时 Claude Code **不报错也不复用**,而是 silently 创建 `arms-2`/`arms-3`。结果是多个 arms 并发写 `.plans/<project>/arms/` 同目录,产生竞态冲突。所以必须先 grep live members 数组确认 name 唯一性。
+  
+  > **为什么 `run_in_background: true`**: arms 7 步流程(SDK 装 + SLS 查 + 归一化 + 根因定位 + 写 5 文件 + 归档)在 sonnet 上一般 10-15 分钟,opus 1M 上 5-10 分钟。foreground 会阻塞主对话期间用户无法看进度、无法 abort、无法做别的事。background 后用户可继续与主对话交互,arms 完成自动通知 team-lead 触发 §6。
 
   > **临时 spawn 与花名册 spawn 的区别**: 临时 spawn 把任务参数**直接拼进 prompt**(一次性发送);花名册 spawn 是先 SendMessage 然后 agent 按 onboarding 接受任务。临时 spawn 走完即结束,花名册 spawn 留存待复用。
 
@@ -87,7 +107,7 @@ description: ARMS 即时巡检 — 查 SLS RUM 异常、分析根因、自动派
 SendMessage(to: "arms"):
 任务: ARMS 即时巡检
 - pid: <来自 CLAUDE.md / 用户选择>
-- env: <解析得到, 默认 prod>
+- env: <解析得到, 默认 CLAUDE.md `default_env` 或 prod>
 - days: <解析得到, 默认 7>
 - keywords: <解析得到, 可空>
 - ak_id: <CLAUDE.md sls_ak_id>
@@ -112,7 +132,7 @@ arms 回报包含: 异常聚合数、最高频异常、推荐派单角色、find
   source: arms
   arms_task_id: arms-<YYYYMMDD>-<NNN>
   findings_path: .plans/<project>/arms/<task-id>/findings.md
-  branch: fix/arms-<task-id>
+  branch: fix/<task-id>
   mr_skip: true
   commit_template: arms
   ```
@@ -151,7 +171,7 @@ SendMessage(to: "arms"):
 ```
 ARMS 任务完成:
 - 根因: <一句话, 取自 findings.md>
-- 分支: fix/arms-<task-id>
+- 分支: fix/<task-id>
 - commit: <hash>(本地, 未推送)
 - reviewer: [OK]
 - 归档: .plans/<project>/arms/<task-id>/(含 findings + resolution + fingerprint)

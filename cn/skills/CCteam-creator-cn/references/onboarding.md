@@ -156,6 +156,25 @@ Turn 结束时的 idle 是自动的——只意味"在等输入"，不意味"我
 - 审查：`SendMessage(to: "reviewer", ...)` — 直接找 reviewer，不经 team-lead
 - 代码是真理，文档跟着代码走；不要静默改变设计
 
+### 协议响应（重要！）
+
+team-lead 可能给你发**协议消息**——结构化 JSON,不是自然语言。general-purpose subagent 默认**不识别**这些协议,只会 `read: true` 然后无视——这是真实事故的根因,本团队不允许。
+
+两种协议消息:
+
+- `{"type": "shutdown_request", "request_id": "..."}` → 你必须回:
+  ```
+  SendMessage(to: "team-lead", message: {"type": "shutdown_response", "request_id": "<echo 上面的 request_id>", "approve": true})
+  ```
+  回完后你的进程被终止。如果有未保存工作 / 不能现在停 → 回 `{"approve": false, "reason": "<具体原因>"}`,team-lead 决定下一步。
+
+- `{"type": "plan_approval_request", "request_id": "..."}` → 回:
+  ```
+  SendMessage(to: "team-lead", message: {"type": "plan_approval_response", "request_id": "<echo>", "approve": true|false, "feedback": "<具体反馈>"})
+  ```
+
+**关键**: 收到协议消息**不要当普通文本处理**——必须显式按上面格式 SendMessage 回应,否则 team-lead 无法 graceful 终止你或推进 plan。**不会 echo request_id 的回应被视为无效**,team-lead 会重发或强杀。
+
 ### 任务交接协议
 
 **大任务**（跨角色传递工作成果）：先在 findings.md 写交接文档（结论、方案、关键文件路径和行号），再 SendMessage 说明位置。
@@ -447,7 +466,7 @@ Co-Authored-By: Claude (CCteam) <noreply@anthropic.com>
 |------|---------------------|--------------------|
 | CI 全绿 | ✅ 必须 | ✅ 必须 |
 | reviewer [OK] | ✅ 必须 | ✅ 必须 |
-| 切分支命名 | bugfix/<source>-<id> / feat/<name> | fix/arms-<task-id>（消息里给的） |
+| 切分支命名 | bugfix/<source>-<id> / feat/<name> | fix/<task-id>（消息里给的，task-id 已含 arms- 前缀） |
 | commit 模板 | 通用 | ARMS 专用（含指纹） |
 | git push | ✅ 做 | ❌ 不做 |
 | 创 MR | ✅ 做 | ❌ 不做 |
@@ -1023,7 +1042,7 @@ team-lead 用 SendMessage 派发，消息必含以下参数:
 ```
 任务: ARMS 即时巡检
 - pid: <ARMS RUM 应用 ID>          # CLAUDE.md 已配
-- env: <prod | daily | pre | all>  # 默认 prod
+- env: <prod | daily | pre | all>  # team-lead 读 CLAUDE.md `default_env` 决定,缺失用 prod
 - days: <回溯天数>                  # 默认 7
 - keywords: <可选关键词过滤>
 - ak_id / ak_secret: <SLS 凭证>     # CLAUDE.md 已配
@@ -1085,7 +1104,12 @@ else:
 PY
 ```
 
-把输出的字段名记在 `<task-id>/progress.md` 一行(`AVAILABLE_FIELDS: [...]`),后续步骤的字段引用以此为准。**官方字段名是 `exception.message`、`exception.stack`、`exception.type`、`view.name`、`view.id`、`session.id`、`app.id`、`app.env`、`event_type`、`event_id`** ——但聚合后缀字段(如 `.convergence`)**是否存在因部署而异,不要假设**。
+把输出的字段名记在 `<task-id>/progress.md` 一行(`AVAILABLE_FIELDS: [...]`),后续步骤的字段引用以此为准。
+
+**字段存在性判断**(在 progress.md 同一行追加):
+- **基础字段(必有)**: `exception.message`、`exception.stack`、`exception.type`、`view.name`、`view.id`、`session.id`、`app.id`、`app.env`、`event_type`、`event_id`
+- **聚合后缀字段(因部署而异)**: `exception.message.convergence`、`view.name.convergence` — **检查 AVAILABLE_FIELDS 看是否真的存在**,记一行 `HAS_CONVERGENCE: true|false`。若存在,Step 4.1 优先用它做分组键(ARMS 后端归一化更准、跨实例一致);不存在则走 Python normalize_message() fallback。
+- **业务码字段**: 不要假设有 `error.code` / `bizCode` 等业务码字段,需逐项 grep 验证
 
 ##### 3.3 正式查询
 
@@ -1128,9 +1152,13 @@ PY
 
 #### Step 4: 聚合分析
 
-##### 4.1 Python 端归一化(替代假设的 .convergence 字段)
+##### 4.1 归一化策略(优先 .convergence,fallback Python normalize)
 
-ARMS 后端的 convergence 机制主要作用于 URL/接口路径(`view.name` 通常已归一化),但 `exception.message` 在 SLS 明细表中是**原始消息**(可能带 session ID / 时间戳 / 用户输入)。在 Python 中做轻量归一化作为分组键:
+ARMS 后端有"convergence"机制对 URL/异常消息做归一化(`view.name` / `exception.message.convergence` 等聚合后缀字段);但**字段是否存在因部署而异**——必须根据 Step 3.2 探测到的 `HAS_CONVERGENCE` 决定策略:
+
+**策略 A — `HAS_CONVERGENCE: true`(daji-cs 这类完整部署)**: 直接用 SLS 返回的 `exception.message.convergence` 做分组键。理由: ARMS 后端归一化更准(替换数字串为 `{ARMS_NUMBER}` 等占位符)、跨实例一致、与 ARMS 控制台聚合视图一致。
+
+**策略 B — `HAS_CONVERGENCE: false`(精简部署或老 SLS)**: 走 Python 端 fallback 归一化:
 
 ```python
 import re
@@ -1148,9 +1176,13 @@ def normalize_message(msg: str) -> str:
     return msg[:120]
 ```
 
+无论 A/B,在 findings.md `## 异常聚合表` 注明策略选择(如"采用 ARMS 后端 convergence 归一化"或"采用 Python normalize_message fallback")。
+
 ##### 4.2 分组与过滤
 
-1. 把所有 exception 事件按 `(normalize_message(exception.message), view.name)` 分组,计数
+1. 把所有 exception 事件按分组键计数:
+   - 策略 A(`HAS_CONVERGENCE: true`): 分组键 = `(exception.message.convergence, view.name)`
+   - 策略 B(fallback): 分组键 = `(normalize_message(exception.message), view.name)`
 2. 过滤 CLAUDE.md `arms_ignore_patterns` 中列出的已知噪声(子串匹配 normalize 后的消息)
 3. 按计数倒序,取 Top 5-10 做后续根因分析
 
@@ -1175,7 +1207,7 @@ def normalize_message(msg: str) -> str:
 2. `## 异常聚合表` — Markdown 表（错误聚合 message | env | 主要 view | 次数 | 最新时间）
 3. `## 根因分析` — 按异常逐一: 堆栈 + 源码定位 + 根因结论
 4. `## 修复方案推荐` — 方案 A / 方案 B,每个含具体改动位置
-5. `## 推荐派单` — `backend-dev` / `frontend-dev`,附拟分支名 `fix/arms-<task-id>`
+5. `## 推荐派单` — `backend-dev` / `frontend-dev`,附拟分支名 `fix/<task-id>`(task-id 已含 `arms-` 前缀,不要再加,否则拼出 `fix/arms-arms-...`)
 6. `## 历史参考`（可选）— step 2 找到的相似命中记录摘要
 
 #### Step 6: 归档（写 fingerprint + 更新 archive/index.md）
@@ -1200,7 +1232,7 @@ ARMS 分析完成:
 - 回溯窗口: <days> 天
 - 推荐派单: <backend-dev | frontend-dev>
 - 分析报告: .plans/<project>/arms/<task-id>/findings.md
-- 拟分支名: fix/arms-<task-id>
+- 拟分支名: fix/<task-id>
 - 历史对比: 新问题 / 相似命中 / 复发 (附上次 commit)
 ```
 

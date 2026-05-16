@@ -97,11 +97,11 @@ team-lead 负责捕获用户的品味/风格偏好：
 
 - **ARMS Sub-Protocol**（仅当 team-lead 派单消息含 `source: arms` 时启用,**覆盖默认 MR 流**）:
 
-  当 team-lead 派下 ARMS 任务（消息字段: `source=arms`, `arms_task_id`, `findings_path`, `branch=fix/arms-<id>`, `mr_skip=true`, `commit_template=arms`）:
+  当 team-lead 派下 ARMS 任务（消息字段: `source=arms`, `arms_task_id`, `findings_path`, `branch=fix/<arms_task_id>`(arms_task_id 已含 `arms-` 前缀), `mr_skip=true`, `commit_template=arms`）:
 
   1. **Read findings**: 先读 `findings_path` 指向的 arms findings.md,理解根因 + 推荐方案
   2. **建任务文件夹**: `.plans/<project>/<你的名字>/task-arms-<arms_task_id>/`,三件套照常
-  3. **切分支**: `git checkout -b fix/arms-<arms_task_id>`(从 team-lead 消息中的 branch 字段)
+  3. **切分支**: `git checkout -b fix/<arms_task_id>`(从 team-lead 消息中的 branch 字段,arms_task_id 已含 `arms-` 前缀)
   4. **TDD 实施**: 与普通任务一致——先测后码,跑 CI 全绿,内部 review [OK]
   5. **本地 commit**（**不 push、不 MR**）,用下面的 ARMS commit 模板
   6. **回报 team-lead**: 含 `commit hash` + `branch name` + `reviewer verdict`

@@ -1,5 +1,52 @@
 # CHANGELOG
 
+## 0.1.5 - 2026-05-16
+
+> Patch: 7 处 V5 (`/arms` 命令)缺口修复,均由 `daji-customer-service` 真实项目端到端验证暴露,**不是设计审视产物**。
+> Patch: 7 ARMS-flow gaps closed, all surfaced by real end-to-end run against `daji-customer-service`.
+
+### Fixed / 修复(真实项目验证驱动)
+
+- **缺口 1: `env` 默认值打架 — `default_env` 字段曾是 dead config**
+  `commands/arms.md §3` 默认 `env=prod` 硬编码,与 `templates.md` 的 CLAUDE.md `default_env: <prod|daily|...>` 字段冲突——用户在 §2 填的 `default_env` 被命令默认值覆盖,字段成了 dead config。
+  → 现在 `env` 默认 `CLAUDE.md.default_env || prod`,尊重用户在 §2 的显式选择。`onboarding.md` 派单消息模板同步。
+  Fixed `env` default precedence; `default_env` is no longer dead config.
+
+- **缺口 2: 临时 spawn `run_in_background: false` 阻塞主对话**
+  `commands/arms.md §4` 临时 spawn 模板 `run_in_background: false` 让 arms 7 步流程(SDK + SLS + 分析 + 写 5 文件)foreground 阻塞 10-30 分钟,用户无法看进度、无法做别的事。
+  → 改为 `run_in_background: true` + 加注释解释 trade-off。background 后用户可继续主对话,arms 完成自动通知 team-lead 触发 §6。
+  Fixed temp spawn to run in background (was blocking main conversation 10-30 min).
+
+- **缺口 3: snapshot 存在但 live team 未 hydrate 时 spawn 失败**
+  `commands/arms.md §1` 仅检查磁盘 snapshot 文件,不检查 Claude Code 内存的 live team。"组完团关 Claude Code → 几天后再开 → /arms"流程下 live team 是冷的,`Agent(team_name=<project>)` 行为不可预期(实测会 silently 创建 arms-2/arms-3 等不期望命名)。
+  → §1 加 step 3 检查 `~/.claude/teams/<project>/config.json` 存在,不存在则 `TeamCreate(team_name=<project>)` **惰性 hydrate**(只起 shell,不复活原 4-5 角色——/arms 不是 team mode 激活)。
+  Fixed `/arms` §1 to lazily hydrate live team when only the snapshot exists.
+
+- **缺口 4: `shutdown_request` 协议在 general-purpose subagent 不被识别**
+  实测发现 arms 收到 `{"type":"shutdown_request","request_id":"..."}` 后仅 `read: true` 然后无视——general-purpose subagent 默认不知道协议响应规范,team-lead 无法 graceful 终止它。
+  → `onboarding.md § 团队沟通` 加新 sub-section `### 协议响应`,显式教所有团队成员两种协议消息 (`shutdown_request` / `plan_approval_request`) 的回应格式 + echo `request_id` 规则。
+  Fixed protocol response education in onboarding (all roles benefit, not just arms).
+
+- **缺口 5: spawn 同名 silently 创建 arms-2 不复用**
+  实测 `Agent(name="arms", team_name="daji-cs")` 当 team 已有 arms member 时 **不报错也不覆盖**,silently 创建 `arms-2`。多个 arms 并发写同一 `.plans/<project>/arms/` 目录会产生竞态冲突。
+  → `commands/arms.md §4` 改为**两层检查**:先 grep live team `config.json` 的 `members` 数组(name 唯一性)→ 再 grep snapshot 花名册(冷成员)→ 都没才 spawn。spawn 调用补 `name: "arms"` 参数。
+  Fixed temp-spawn duplicate-name silent collision.
+
+- **缺口 6: 分支名 `fix/arms-<task-id>` 拼出双前缀 `fix/arms-arms-...`**
+  task-id 格式 `arms-<YYYYMMDD>-<NNN>` 本身已含 `arms-` 前缀,与模板的 `fix/arms-` 前缀重复。实测 arms-2 输出的 findings.md 写 `拟分支名: fix/arms-arms-20260516-001`。
+  → 全文 7 处模板字符串 `fix/arms-<task-id>` → `fix/<task-id>`(示例值 `fix/arms-20260514-001` 保持不变——那是正确的 `fix/<task-id>` 展开)。涉及: commands/arms.md / onboarding.md (4 处) / roles.md (2 处)。
+  Fixed branch name template double-prefix bug.
+
+- **缺口 7: `.convergence` 字段并非全幻觉,实际部署可能存在**
+  0.1.4 把 `.convergence` 后缀字段当全幻觉删掉是**过度修正**。daji-cs 真实查询发现 ARMS 后端聚合字段 `exception.message.convergence` 在该 deployment 上**存在且工作**(归一化后是 `conv list failed: {ARMS_NUMBER}`),比 Python 端 normalize 更准、跨实例一致、与 ARMS 控制台聚合视图一致。
+  → `onboarding.md § arms Step 3.2` 加 `HAS_CONVERGENCE` 字段探测;Step 4.1 改为**策略选择**: 探测到则优先用 `.convergence` 做分组键(策略 A);没探测到才 fallback 到 Python `normalize_message()`(策略 B,原 0.1.4 实现)。
+  Fixed `.convergence` field handling — probe-and-prefer instead of always-fallback.
+
+### Notes / 备注
+- **CN-only**: 同 0.1.4,EN skill 暂未同步,本次仅 CN 修复。
+- **验证方法学延续**: 0.1.4 引入"真实项目验证"原则(`real-user-validation-over-spec-completeness`),0.1.5 是其延续——所有 7 处缺口均**在跑通一次 /arms 流程的过程中暴露**,无一来自设计文档复盘。设计阶段 13 项验收清单 + 0.1.4 真实项目验证 4 项 + 0.1.5 真实端到端 7 项 = **24 个 acceptance points 累计**,且后两批仅在"用真实凭证、真实 SLS、真实 spawn"的条件下才会出现。
+- **`.convergence` 修正语调**: 0.1.4 commit message 写"`.convergence` 字段是设计幻觉"——这个措辞**过强**。准确的描述是"字段存在性因 SLS 部署而异,不能假设"。0.1.5 已用"策略选择"取代"删除"。
+
 ## 0.1.4 - 2026-05-16
 
 > Minor: ARMS RUM 即时巡检 (`/arms` 命令) + UX gap closure surfaced by real-project validation against `daji-customer-service`.

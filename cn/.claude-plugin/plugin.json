@@ -1,7 +1,7 @@
 {
   "name": "CCteam-creator-cn",
   "description": "Claude Code multi-agent team orchestration (Chinese version) with native Aliyun ecosystem integration (Yunxiao Codeup MR / Zentao bug intake / ARMS error monitoring).",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "author": {
     "name": "motou"
   },
