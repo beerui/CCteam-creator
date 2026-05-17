@@ -422,10 +422,10 @@ commit_template: arms
 
 1. **Read findings**: 读 `findings_path` 指向的 arms findings.md,**完整理解**:
    - 异常聚合表 / 根因分析 / 推荐方案 A or B / 修复点的文件:行号
-2. **建任务文件夹**: `.plans/<project>/<你的名字>/task-arms-<arms_task_id>/`
-   - `task_plan.md`: 从 arms findings 抄过来的步骤,转成 dev 视角
-   - `findings.md`: 实施过程中发现的细节
-   - `progress.md`: 实施日志
+2. **建任务文件夹（P1 起引用模式, 不复制副本）**: `.plans/<project>/<你的名字>/task-arms-<arms_task_id>/`
+   - `source.ref`: 单行内容指向 arms task folder 相对路径, e.g. `../../arms/<arms_task_id>/`(任务唯一原创起点, dev 启动时先 Read 它再去拼绝对路径读 arms task_plan.md / findings.md, 只读)
+   - `progress.md`: dev 自己的实施日志(唯一原创)
+   - ❌ **不再复制** `task_plan.md` / `findings.md` 副本 — P1 取消, 避免不同步源
 3. **切分支**: `git checkout -b <branch>`（用消息里的 branch 字段,**不要自己造名字**）
 4. **TDD 实施**: 与普通任务一致——先测后码,跑 CI 全绿
 5. **请 reviewer 内部评审**: SendMessage(reviewer),verdict 必须 [OK] 才能 commit
@@ -1061,13 +1061,13 @@ team-lead 派单消息可能含 `mode` 字段:
 | Step | batch 模式 | targeted 模式差异 |
 |---|---|---|
 | 1 任务文件夹 | 不变 | 不变,task-id 仍 `arms-<YYYYMMDD>-<NNN>` |
-| 2 历史对比 | grep archive 预筛 | 不变 |
+| 2 历史对比 | SQLite SELECT fingerprints (P1 起) | 不变 |
 | 3.3 SLS 查询 | `query=app.id:{PID} AND event_type:exception`,line=500,fromTime = now - DAYS×86400 | `query=app.id:{target_app_id} AND event_type:exception [+ AND app.env:{target_env} 若有] [+ AND "{keywords}" 若有]`,line=50,fromTime=`target_from_ts`,toTime=`target_to_ts` |
 | 4.1 归一化策略 | 探测 HAS_CONVERGENCE 选 A/B | 不变 |
 | 4.2 分组 | 取 Top 5-10 | 按 fingerprint 计数后分支: **0 命中** → 回报 "0 命中" 给 team-lead,**不写 findings, 不归档, 清理半成品任务文件夹**,任务结束; **1 fingerprint** → 直接 Step 4.3; **≥2 fingerprints** → 回报候选清单(每条含 norm_message / view.name / 次数 / 最新时间 / 一条样本堆栈摘要)给 team-lead **暂停等回选**,team-lead 回 "请按 fingerprint #i 继续 Step 4.3" 才继续 |
 | 4.3 根因 | 对每个 Top 高频异常做 | 仅对 1 条(或 team-lead 选定的那条) |
 | 5 findings.md | 概览/聚合表/根因/方案/派单/历史参考 | 概览节加一行 `模式: 单点修复 (URL: <原 URL>, keywords: <值或空>)`; 异常聚合表只 1 行 |
-| 6 fingerprint + archive | 写 fingerprint.md + archive/index.md 加一行 | 不变(archive 一行就够) |
+| 6 fingerprint + archive | 写 fingerprint.md + INSERT archive.db.fingerprints (P1 起 SQLite 为源) | 不变 |
 | 7 回报 | 标准回报 | 标准回报 + 注明"单点修复" |
 
 **0/N 分支的具体回报格式与 team-lead 二次交互约定见 commands/arms.md §10.4**
@@ -1082,12 +1082,33 @@ team-lead 派单消息可能含 `mode` 字段:
 
 这样 step 3+ 可以直接往 `<task-id>/progress.md` 记日志。
 
-#### Step 2: 历史对比（grep 指纹库）
+#### Step 2: 历史对比（SQLite 指纹查询, P1 起替代 grep）
 
-- 路径: `.plans/<project>/arms/archive/index.md`
-- 不存在 → 视为首次运行,跳过本步
-- 存在 → grep 当前会话的目标特征（如已知关键词或先行小规模查询的样本）
-- 此步是预筛,主要的指纹匹配在 step 5 写 fingerprint 之前再做一次
+- 路径: `.plans/<project>/arms/archive.db`（SQLite, P1 引入; 旧 `archive/index.md` 已迁为 `index.md.legacy`,不再读）
+- DB 不存在 → 视为首次运行,跳过本步; SessionStart hook 会自动调 `scripts/arms-migrate-archive.py` 建表
+- 指纹键: `conv_message + stack_top_frame (file:fn)`，不再用 `view.name`（SPA URL 漂、H5 多入口同 view、后端无 view）
+- 查询方式（用 Bash 跑一行 python3）:
+
+```bash
+python3 -c "
+import sqlite3
+conn = sqlite3.connect('.plans/<project>/arms/archive.db')
+conn.row_factory = sqlite3.Row
+row = conn.execute(
+    'SELECT task_id, status, commit_hash, resolved_at FROM fingerprints '
+    'WHERE conv_message=? AND stack_top_frame=? AND env=?',
+    ('<conv_msg>', '<top_frame>', '<env>')
+).fetchone()
+print(dict(row) if row else 'no-match')
+"
+```
+
+- 输出语义:
+  - 精确命中 + `status='resolved'` → 回报"复发", 附 `commit_hash`
+  - 精确命中 + `status='analyzed'` → 回报"进行中, 已有任务 <task_id>", 终止本次
+  - 精确命中 + `status='ignored'` → 回报"曾被忽略", 询问 team-lead 是否照修
+  - 旧条目 `stack_top_frame='<legacy>'` → 不参与精确命中, 退化用 `conv_message + env` 触发"相似命中"
+  - 无记录 → 正常走 step 3-7
 
 #### Step 3: SLS 查询 RUM exception 事件
 
@@ -1231,17 +1252,39 @@ def normalize_message(msg: str) -> str:
 5. `## 推荐派单` — `backend-dev` / `frontend-dev`,附拟分支名 `fix/<task-id>`(task-id 已含 `arms-` 前缀,不要再加,否则拼出 `fix/arms-arms-...`)
 6. `## 历史参考`（可选）— step 2 找到的相似命中记录摘要
 
-#### Step 6: 归档（写 fingerprint + 更新 archive/index.md）
+#### Step 6: 归档（写 fingerprint.md + SQLite, P1 起 SQLite 是源）
 
-1. 写 `<task-id>/fingerprint.md`（模板见 templates.md § ARMS fingerprint 模板）,frontmatter 含 `status: analyzed`
-2. 更新 `archive/index.md`:
-   - 路径: `.plans/<project>/arms/archive/index.md`
-   - 找到当前月份的表（如 `## 2026-05`）,追加一行
-   - 月表不存在 → 新建月表（格式见 templates.md § ARMS archive 模板）
-3. **再次指纹匹配**: 写之前 grep 整个 index.md 看 `fingerprint` 列是否已有同串
-   - 命中且 status=resolved → 改 findings 为"复发"摘要,resolution 引用上次的 commit hash
-   - 命中且 status=ignored → 改 findings 为"复发(上次被忽略)"摘要,附上次的忽略原因,给 team-lead 决策"是否本次照修"
-   - 命中且 status=analyzed → 终止本次任务,回报"已有进行中任务: <task-id>"
+1. 写 `<task-id>/fingerprint.md`（模板见 templates.md § ARMS fingerprint 模板,人类可读, 保留）, frontmatter 含 `status: analyzed`
+2. INSERT 到 `archive.db.fingerprints`（替代旧 `archive/index.md` 追加行）:
+
+```bash
+python3 -c "
+import sqlite3, time, sys
+sys.path.insert(0, 'scripts')
+from arms_lib.db import init_schema, insert_fingerprint
+conn = sqlite3.connect('.plans/<project>/arms/archive.db')
+init_schema(conn)
+insert_fingerprint(conn, dict(
+    task_id='<task_id>',
+    conv_message='<conv_msg>',
+    stack_top_frame='<top_frame>',
+    view_name='<view>',
+    env='<env>',
+    app='<app>',
+    pid='<pid>',
+    status='analyzed',
+    created_at=int(time.time()),
+    last_seen_at=int(time.time()),
+    last_seen_count=<count>,
+))
+"
+```
+
+3. **再次指纹匹配**: INSERT 前用 Step 2 的 SELECT 再查一次, 防止竞态
+   - 命中且 `status='resolved'` → 改 findings 为"复发"摘要, resolution 引用 `commit_hash`
+   - 命中且 `status='ignored'` → 改 findings 为"复发(上次被忽略)"摘要, 附上次的忽略原因
+   - 命中且 `status='analyzed'` → 终止本次任务, 回报"已有进行中任务: <task-id>"
+4. 旧 `archive/index.md` 已废弃, P1 起不再读不再写 (`index.md.legacy` 是只读快照)
 
 #### Step 7: 回报 team-lead
 
@@ -1262,16 +1305,40 @@ ARMS 分析完成:
 当 team-lead 通知 "dev 完成 + reviewer [OK], commit <hash>":
 
 1. 写 `<task-id>/resolution.md`（模板见 templates.md § ARMS resolution 模板）
-2. 更新 archive/index.md:
-   - 找到本任务行,status 从 `analyzed` 改为 `resolved`
-   - 补 `resolved_at` 列
+2. 更新 archive.db.fingerprints (P1 起 SQLite 为源, 不再写 archive/index.md):
+   ```bash
+   python3 -c "
+   import sqlite3, time, sys
+   sys.path.insert(0, 'scripts')
+   from arms_lib.db import update_fingerprint_status
+   conn = sqlite3.connect('.plans/<project>/arms/archive.db')
+   update_fingerprint_status(conn, '<task_id>',
+       status='resolved',
+       resolved_at=int(time.time()),
+       commit_hash='<hash>',
+       branch='fix/<task_id>',
+       resolved_by='<backend-dev | frontend-dev>')
+   "
+   ```
 3. 回 SendMessage(team-lead) "归档完成"
 
 ### 用户决定不修时（ignored）
 
 当 team-lead 通知 "用户选择不修, arms_task_id=<id>":
 
-1. 更新 archive/index.md 本任务行: status 从 `analyzed` 改为 `ignored`,resolved_at 列填当日日期作为 ignored_at
+1. UPDATE archive.db.fingerprints (P1 起 SQLite 为源): 同 resolution 流程, 但 `status='ignored'`,`resolved_at` 用当日 ts 作为 ignored_at:
+   ```bash
+   python3 -c "
+   import sqlite3, time, sys
+   sys.path.insert(0, 'scripts')
+   from arms_lib.db import update_fingerprint_status
+   conn = sqlite3.connect('.plans/<project>/arms/archive.db')
+   update_fingerprint_status(conn, '<task_id>',
+       status='ignored',
+       resolved_at=int(time.time()),
+       resolved_by='user-ignored')
+   "
+   ```
 2. 更新 `<task-id>/fingerprint.md` frontmatter: `status: ignored`,追加 `## 忽略原因` 块（一行,team-lead 转述用户的话）
 3. **不写** resolution.md（没有 commit 可登记）
 4. 回 SendMessage(team-lead) "已标记 ignored,下次同指纹复发会按"复发"路径报告"
@@ -1289,14 +1356,14 @@ ARMS 分析完成:
 - SLS 查询失败同种错误 3 次 → escalate team-lead,附错误信息
 - 根因定位不出 3 次 → findings 标记 `[NEEDS-HUMAN]`,继续写可写部分,然后 escalate
 - PID/凭证缺失 → 0 次重试,立即 escalate
-- 写 fingerprint.md 前 grep 已发现 status=analyzed 的同指纹 → 终止本次任务（不算失败,正常路径）
+- 写 fingerprint.md 前 SQLite SELECT 已发现 status=analyzed 的同指纹 → 终止本次任务（不算失败,正常路径）
 
 ### 文档维护频率
 
 - 每次 SLS 查询完成 → 在 `<task-id>/progress.md` 记一行（时间、参数、返回条数）
 - 每次根因定位 → 在 `<task-id>/findings.md` 即时追加
 - 重大决策（如某噪声规则导致大量过滤）→ 根 `findings.md` 索引追加 `[FILTER-DECISION]` 条目
-- archive/index.md 在 step 6 必须更新,不能延后
+- archive.db.fingerprints INSERT 在 step 6 必须当下完成,不能延后 (P1 起 SQLite 为源, 旧 archive/index.md 已废弃)
 
 ### 任务文件夹结构
 

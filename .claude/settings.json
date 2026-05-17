@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "command": "python3 scripts/arms-on-session.py",
+        "timeout": 30000
+      }
+    ]
+  }
+}

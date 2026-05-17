@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ccteam-arms"
+version = "0.3.0"
+description = "ARMS flow automation for CCteam"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["scripts", "tests"]
+addopts = "-v --cov=scripts/arms_lib --cov-fail-under=80 --cov-report=term-missing"
+
+[tool.coverage.run]
+omit = ["tests/*", "scripts/arms-migrate-archive.py", "scripts/arms-on-session.py"]

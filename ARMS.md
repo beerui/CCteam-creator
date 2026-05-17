@@ -1,3 +1,183 @@
+## P1 自动巡检模式 (0.3.0+)
+
+P1 把 ARMS 流程从"用户主动 /arms"升级为"IDE 启动自动 push brief"。原 7 步流程不变, 在它**前端**加一层 SessionStart 数据采集 + 后端把 grep 换 SQLite。
+
+### 触发链
+
+```
+Claude Code 启动
+  → SessionStart hook (.claude/settings.json)
+  → scripts/arms-on-session.py (shell, 不调 LLM)
+  → 检查 archive.db.meta.last_global_scan
+      ├─ ≤24h → exit 0
+      └─ >24h → 拉 SLS (prod, 1d, line=500)
+          → 聚合 + 比对 SQLite 指纹库
+          → 新指纹 INSERT (status=analyzed, 无 findings)
+          → 复发更新 last_seen_at/count
+          → 90 天 retention 清理
+          → 写 .plans/<project>/arms/inbox.md
+          → stdout 输出 <arms-session-context>...</arms-session-context>
+  → Claude Code 把 brief 注入 model 首轮 context
+  → model 呈现给用户
+  → 用户决定: 深挖某条 → /arms task=<task-id> (走 §11)
+              忽略 → 继续工作
+```
+
+### 数据层
+
+- SQLite 库: `.plans/<project>/arms/archive.db` (T8 一次性迁移旧 `archive/index.md` 为 `index.md.legacy`)
+- 表: `fingerprints / occurrences / meta` (见 spec §3.1)
+- fingerprint 键: `SHA1(conv_message + ' @ ' + stack_top_frame)`, 替代旧的 `conv_message @ view.name`
+- 保留: 90 天 (status=resolved/ignored 才删, analyzed 永不删)
+- `occurrences.task_id` FK ON DELETE CASCADE — 删 fingerprint 自动清子表
+
+### 失败模式
+
+- SessionStart hook 失败 (无凭证 / SLS 不可达 / DB 损坏) → stdout 输出"巡检失败" brief, exit 0, **不阻塞 Claude Code 启动**
+- `last_global_scan` 只在 render + brief 全部成功后才写, 避免 render 异常导致下次 24h 内静默跳过
+
+### 与原 7 步流程的关系
+
+| 维度 | 0.2.0 (原) | 0.3.0+ (P1) |
+|------|-----------|-------------|
+| 触发 | 用户主动 `/arms` | SessionStart hook 自动 + 用户主动 `/arms task=<id>` 深挖 |
+| 历史对比 (Step 2) | grep `archive/index.md` | SQLite SELECT fingerprints WHERE conv_message=? AND stack_top_frame=? AND env=? |
+| 归档 (Step 6) | 写 fingerprint.md + 追加 `archive/index.md` 行 | 写 fingerprint.md + INSERT `archive.db.fingerprints` |
+| 数据保留 | markdown 永久 | SQLite 90 天 retention |
+| Dev task folder | 复制 task_plan/findings 副本 | `source.ref` 单行引用 arms task folder, 不复制 |
+
+P2 (后续) 会加 Step 9 (24h/7d 回访验证) + reviewer 改造 + multi-URL targeted; P3 调研 ARMS OpenAPI 反写。
+
+---
+
+## 流程总览(可视化)
+
+```mermaid
+flowchart TD
+    %% ========== ① 触发层 ==========
+    T1["自然语言<br/>「查一下 arms」"]:::trigger
+    T2["/arms<br/>[env=.. days=.. keywords=..]"]:::trigger
+    T3["/arms https://arms.console...<br/>(0.2.0 单点修复)"]:::trigger
+
+    %% ========== ② team-lead 路由准备 ==========
+    P1["读 .plans/&lt;project&gt;/team-snapshot.md<br/>(不存在 → 报错并停止)"]:::tl
+    P2{"~/.claude/teams/&lt;project&gt;/<br/>config.json 已 hydrate ?"}:::tl
+    P3["惰性 hydrate<br/>(只起 team-lead shell,<br/>不复活其它角色)"]:::tl
+    P4["检查 + 补全 ARMS 配置<br/>.env 存凭证 +<br/>CLAUDE.md 只存 $&#123;VAR&#125; 引用<br/>.gitignore 含 .env"]:::tl
+    P5["解析参数 + 解引用 $&#123;VAR&#125;<br/>(真值只留 team-lead 内存)"]:::tl
+    P6{"arms 角色状态?"}:::tl
+    P7a["live arms 存在<br/>→ ping 60s 健康检查<br/>alive 则复用"]:::tl
+    P7b["在 snapshot 花名册<br/>→ Agent name=arms-&lt;task-id&gt;<br/>(花名册 spawn)"]:::tl
+    P7c["都没有<br/>→ 临时 spawn<br/>general-purpose / opus / bg"]:::tl
+
+    T1 --> P1
+    T2 --> P1
+    T3 --> P1
+    P1 --> P2
+    P2 -- 否 --> P3 --> P4
+    P2 -- 是 --> P4
+    P4 --> P5 --> P6
+    P6 --> P7a
+    P6 --> P7b
+    P6 --> P7c
+
+    SendArms["SendMessage(arms)<br/>pid / env / days / keywords +<br/>ak_id / ak_secret / region / project / logstore +<br/>mode = batch | targeted"]:::tl
+
+    P7a --> SendArms
+    P7b --> SendArms
+    P7c --> SendArms
+
+    %% ========== ③ arms 7 步闭环 ==========
+    S1["Step 1<br/>生成 task-id = arms-YYYYMMDD-NNN<br/>建任务文件夹骨架"]:::arms
+    S2["Step 2<br/>grep archive/index.md<br/>预筛历史指纹"]:::arms
+    S3["Step 3<br/>① pip --user aliyun-log-python-sdk<br/>② 字段探测 HAS_CONVERGENCE<br/>③ SLS GetLogs (batch line=500 / targeted line=50)"]:::arms
+    S4["Step 4 聚合分析<br/>归一化(convergence 或 Python fallback)<br/>过滤 ignore_patterns<br/>对 Top 异常做根因定位(堆栈→源码 Read)"]:::arms
+
+    Branch{"模式 + 命中数"}:::arms
+    Z0["targeted 0 命中<br/>清理半成品<br/>回报后结束"]:::arms
+    ZN["targeted ≥2 命中<br/>回报候选清单<br/>暂停等 team-lead 选 #i"]:::arms
+
+    S5["Step 5 写 findings.md<br/>概览 / 聚合表 / 根因 /<br/>方案 / 推荐派单 / 历史参考"]:::arms
+    S6["Step 6 写 fingerprint.md<br/>+ 更新 archive/index.md<br/>(再次匹配:新/相似/复发/进行中)"]:::arms
+    S7["Step 7 回报 team-lead"]:::arms
+
+    SendArms --> S1 --> S2 --> S3 --> S4 --> Branch
+    Branch -- batch 或 targeted 1 命中 --> S5
+    Branch -- targeted 0 命中 --> Z0
+    Branch -- targeted ≥2 命中 --> ZN
+    ZN -. 用户选第 i 个 .-> S5
+    S5 --> S6 --> S7
+
+    %% ========== ④ team-lead 派单决策 ==========
+    TLAfter["team-lead 收回报"]:::tl
+    S7 --> TLAfter
+    Z0 --> TLAfter
+
+    D1{"回报形态"}:::tl
+    DNew["SendMessage(backend-dev / frontend-dev)<br/>source=arms<br/>commit_template=arms<br/>mr_skip=true<br/>findings_path / branch"]:::tl
+    DRecur["告知用户:复发<br/>引用上次 commit 和分支"]:::tl
+    DPro["告知用户:已有 in-progress task"]:::tl
+    DN["AskUserQuestion 列候选<br/>选 #i / 加 keywords 重跑 / 取消"]:::tl
+    D0["告知用户:0 命中<br/>建议精化 keywords 或扩窗口"]:::tl
+
+    TLAfter --> D1
+    D1 -- 新问题 / 相似 --> DNew
+    D1 -- 复发 resolved --> DRecur
+    D1 -- 进行中 analyzed --> DPro
+    D1 -- N 候选 --> DN
+    D1 -- 0 命中 --> D0
+    DN -. 选定后 .-> S5
+
+    %% ========== ⑤ dev 修复 + 归档回流 ==========
+    E1["dev 读 findings + 建 task-arms-&lt;id&gt; 文件夹"]:::dev
+    E2["git checkout -b fix/&lt;task-id&gt;<br/>实施"]:::dev
+    E3["SendMessage(reviewer) 内审"]:::dev
+    E4{"reviewer ?"}:::dev
+    E5["按 ARMS commit 模板<br/>本地 commit (不 push / 不 MR)"]:::dev
+    E6["回报 team-lead 含 commit hash"]:::dev
+
+    DNew --> E1 --> E2 --> E3 --> E4
+    E4 -- 改 --> E2
+    E4 -- "[OK]" --> E5 --> E6
+
+    TLDone["team-lead 通知 arms 归档"]:::tl
+    S8["arms 补 resolution.md<br/>archive/index.md status=resolved"]:::arms
+    TLSum["team-lead 总结给用户<br/>根因 / 分支 / commit / reviewer /<br/>请自行走合并流程"]:::tl
+
+    E6 --> TLDone --> S8 --> TLSum
+
+    %% ========== 用户长尾 ==========
+    U1{"用户决定"}:::trigger
+    Uig["用户:这个先不修了"]:::trigger
+    SIg["arms 改 archive status=ignored<br/>fingerprint.md 附忽略原因"]:::arms
+    EndN(["流程结束"]):::trigger
+
+    TLSum --> U1
+    DRecur --> U1
+    DPro --> U1
+    D0 --> EndN
+    U1 -- OK / 收到 --> EndN
+    U1 -- 重做 --> P1
+    Uig -. 任意时刻 .-> TLDone
+    TLDone -. ignored 路径 .-> SIg --> EndN
+
+    %% ========== 数据落点 ==========
+    Files["📁 .plans/&lt;project&gt;/arms/<br/>├─ &lt;task-id&gt;/<br/>│   ├─ task_plan.md<br/>│   ├─ progress.md<br/>│   ├─ findings.md<br/>│   ├─ fingerprint.md (analyzed→resolved/ignored)<br/>│   └─ resolution.md (dev 完成后补)<br/>└─ archive/index.md (月度指纹索引)"]:::data
+    S6 -.-> Files
+    S8 -.-> Files
+    SIg -.-> Files
+
+    classDef trigger fill:#e1f5ff,stroke:#0288d1,color:#01579b
+    classDef tl fill:#fff3e0,stroke:#ef6c00,color:#bf360c
+    classDef arms fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
+    classDef dev fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+    classDef data fill:#fafafa,stroke:#616161,color:#212121,stroke-dasharray: 5 5
+```
+
+**图例**: 🔵 触发/用户 · 🟠 team-lead 控制 · 🟣 arms 数据 · 🟢 dev 执行 · ⬜ 磁盘落点
+
+---
+
 ## 整体调用关系
 
 ### 整体流程

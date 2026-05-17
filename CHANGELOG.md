@@ -1,5 +1,69 @@
 # CHANGELOG
 
+## 0.3.1 - 2026-05-17
+
+> Patch: T16 真 e2e 验证回炉, 修 fingerprint 归一化不足 / hook 不读 default_env / brief highlight 选条三个 bug.
+
+### Fixed / 修复
+
+- **fingerprint 归一化** (P0): `arms_lib/fingerprint.py` 新增 `normalize_for_fingerprint(text)`, 两条规则: (1) 前端构建产物 chunk hash `/name-AbCd1234.js` → `/name-{HASH}.js` (兼容 6-32 字符 base64url alphabet, 覆盖 vite/webpack contenthash); (2) ISO 时间戳毫秒尾巴 `.453Z` → `.{MS}Z`. `compute_fingerprint` 与 `aggregate_exceptions` 入口都调归一化, 与 SQLite 存储 / select_fingerprint_match 一致. **真 e2e 现场坐实**: daji 测试服 6 → 2 (5 条 ARMS 测试错误因毫秒戳拆开), 当前 prod 7 → 4 (4 条 CSS preload 因 chunk hash 拆开).
+- **SessionStart hook 读 default_env** (P1): 新增 `arms_lib/config.py:load_config(arms_dir)` 读 `.plans/<project>/arms/config.json`. hook 之前硬编码 `env="prod"`, 与 commands/arms.md 承诺的"先读 default_env, 缺失才用 prod"冲突, 导致接入项目想做"测试服日常巡检"走不通. `/arms` 用户命令仍读 CLAUDE.md (向后兼容).
+- **brief highlight 按 count desc 排序** (P3): `_run_scan` 返回 new_items 前 `sort(key=count, reverse=True)`, 让 brief 的"首条新增"自然选最值得 highlight 的指纹 (而非 SQLite 表查询顺序).
+- `_emit_failure` brief 重试命令使用动态 `default_env` (此前硬编码 `prod`, 跟 default_env 修复一并处理)
+
+### Added / 新增
+
+- `scripts/arms_lib/config.py` — per-project 配置加载 (JSON, 容错 fallback). 未来 P2 字段 (retention_days / ignore_patterns) 在此扩展, 无需新 .env 变量.
+- 22 个新单元测试: fingerprint norm 13 + sls collapse 2 + config 4 + hook default_env/sort 3. 全套从 54 → 76 全绿.
+
+### Docs
+
+- `commands/arms.md` §11 末尾加 "Hook 配置: config.json" 一节, 说明 hook 与 `/arms` 命令的配置分裂 (hook 走 config.json, 命令走 CLAUDE.md)
+
+## 0.3.0 - 2026-05-17
+
+> Minor: P1 全面优化 ARMS 流程 — 从 "用户主动 /arms pull" 升级为 "IDE 启动自动 push brief"; markdown 指纹库迁移到 SQLite (90d retention); fingerprint 键改用 stack_top_frame (代码层不变量, 替代 view.name)。
+> Minor: P1 ARMS overhaul — switch from "user-pull /arms" to "IDE-push brief via SessionStart hook"; migrate markdown fingerprint store to SQLite (90d retention); fingerprint key uses stack_top_frame (code-layer invariant) instead of view.name.
+
+### Added / 新增
+
+- SQLite 指纹库 `.plans/<project>/arms/archive.db` (3 表: fingerprints / occurrences / meta + ON DELETE CASCADE)
+- Python 包 `scripts/arms_lib/` — `db.py` / `fingerprint.py` / `sls.py` / `inbox.py` / `retention.py` 五个模块, 单元测试覆盖率 ≥80%
+- `scripts/arms-migrate-archive.py` — 一次性把旧 `archive/index.md` 迁到 SQLite, 旧文件保留为 `index.md.legacy` 只读快照
+- `scripts/arms-on-session.py` — Claude Code SessionStart hook 入口 (shell 采集, ≤15s 预算, 失败不阻塞 IDE 启动)
+- `.claude/settings.json` — 配置 SessionStart hook 触发 arms-on-session.py
+- `/arms task=<task-id>` — 单条深挖模式 (commands/arms.md §11), 跳过 SLS 查询直接走根因分析阶段
+- 90 天 retention 策略 — `status IN ('resolved', 'ignored') AND resolved_at < now - 90d` 自动清理; `analyzed` 永不删
+
+### Changed / 变更
+
+- arms agent Step 2 (历史对比): `grep archive/index.md` → SQLite SELECT fingerprints
+- arms agent Step 6 (归档): `archive/index.md` 追加行 → INSERT to `archive.db.fingerprints`
+- arms resolution / ignored 路径: 改写 SQLite (`update_fingerprint_status`), 不再触碰 archive/index.md
+- fingerprint 键: `conv_message + view.name` → `SHA1(conv_message + ' @ ' + stack_top_frame)`; stack_top_frame 解析 Chrome V8 / Firefox / 纯路径, 跳过 node_modules / chunk-vendors / .min.js, 转义 Windows 路径 + URL query 字符串
+- SLS query 构造: 抽出纯函数 `_build_query`, 对 `keywords` 做引号+反斜杠转义 + 控制字符拒绝 (防 SLS query injection)
+- dev agent task folder: 不再复制 `task_plan.md` / `findings.md` 副本, 改用 `source.ref` 单行引用 arms task folder (避免不同步源)
+
+### Fixed / 修复
+
+- `update_fingerprint_status` docstring 明确为终态转移 (resolved/ignored), 不适合增量更新 last_seen_*
+- `init_schema` 一次性设置 `conn.row_factory = sqlite3.Row` + `PRAGMA foreign_keys = ON`, 不再在 select_fingerprint_match 内部副作用
+- SessionStart hook 的 `last_global_scan` 改在 render + brief 全部成功后才写, 避免 render 异常导致下次 24h 内静默跳过
+- `arms-on-session.py` 启动时 `_load_dotenv(cwd/.env)` 自动加载 .env (零依赖, 已存在 env 不覆盖); 修复"集成项目首次开 session 必看'巡检失败'兜底"问题 — hook 是独立子进程, 不继承 shell 的 .env
+
+### Docs
+
+- 新增 `docs/superpowers/specs/2026-05-17-arms-flow-overhaul-design.md` (P1+P2+P3 三段式设计)
+- 新增 `docs/superpowers/plans/2026-05-17-arms-p1-impl.md` (P1 16-task 实施计划)
+- 更新 `ARMS.md` 顶部加 "P1 自动巡检模式 (0.3.0+)" 一节 + 0.2.0 整体流程 mermaid 图
+- 更新 `cn/skills/CCteam-creator-cn/references/onboarding.md` arms / dev 角色说明
+
+### Not in scope / 不在本期范围
+
+- en 英文版 `skills/CCteam-creator/references/onboarding.md` 中的 ARMS 段尚未存在, en 同步留给后续 i18n
+- P2: Step 9 修复后 24h/7d 回访验证、reviewer 改造、多 URL targeted、team-lead 解耦轻量模式
+- P3: ARMS OpenAPI 反写调研 / 浏览器扩展兜底
+
 ## 0.2.0 - 2026-05-17
 
 > Minor: `/arms` 新增单点修复(targeted fix)模式,arms agent 协议扩展 `mode` 字段。
