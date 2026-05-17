@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS meta (
 def init_schema(conn: sqlite3.Connection) -> None:
     """创建 3 表 + 索引 (幂等)."""
     conn.executescript(_SCHEMA)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.row_factory = sqlite3.Row
     conn.commit()
 
 
@@ -71,7 +73,11 @@ def update_fingerprint_status(
     branch: Optional[str] = None,
     resolved_by: Optional[str] = None,
 ) -> None:
-    """更新一条 fingerprint 的 status + 解析字段."""
+    """转移 fingerprint 到终态 (resolved / ignored), 写入解析元数据.
+
+    注意: 该函数把 resolved_at/commit_hash/branch/resolved_by 全部写入 (未传则置 NULL),
+    不适合用来增量更新 last_seen_*; 后者请用原生 SQL.
+    """
     conn.execute(
         """UPDATE fingerprints SET
            status=?, resolved_at=?, commit_hash=?, branch=?, resolved_by=?
@@ -89,7 +95,6 @@ def select_fingerprint_match(
     env: str,
 ) -> Optional[dict]:
     """精确匹配 (conv_message + stack_top_frame + env). 返回单行 dict 或 None."""
-    conn.row_factory = sqlite3.Row
     row = conn.execute(
         """SELECT * FROM fingerprints
            WHERE conv_message=? AND stack_top_frame=? AND env=?

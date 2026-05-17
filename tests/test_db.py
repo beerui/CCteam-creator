@@ -96,3 +96,20 @@ def test_meta_upsert_and_get(empty_db_conn):
     assert get_meta(empty_db_conn, "last_global_scan") == "1716000000"
     upsert_meta(empty_db_conn, "last_global_scan", "1716003600")
     assert get_meta(empty_db_conn, "last_global_scan") == "1716003600"
+
+
+def test_init_schema_sets_row_factory(tmp_db_path):
+    """init_schema 应该把 row_factory 设成 sqlite3.Row, 让所有后续 query 返回 Row."""
+    conn = sqlite3.connect(tmp_db_path)
+    init_schema(conn)
+    assert conn.row_factory is sqlite3.Row
+    conn.close()
+
+
+def test_init_schema_enables_foreign_keys(tmp_db_path):
+    """init_schema 应该开启 PRAGMA foreign_keys."""
+    conn = sqlite3.connect(tmp_db_path)
+    init_schema(conn)
+    result = conn.execute("PRAGMA foreign_keys").fetchone()
+    assert result[0] == 1
+    conn.close()
