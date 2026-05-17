@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS idx_fp_status_resolved
 
 CREATE TABLE IF NOT EXISTS occurrences (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id     TEXT NOT NULL REFERENCES fingerprints(task_id),
+  task_id     TEXT NOT NULL REFERENCES fingerprints(task_id) ON DELETE CASCADE,
   occurred_at INTEGER NOT NULL,
   count       INTEGER NOT NULL,
   source      TEXT NOT NULL
