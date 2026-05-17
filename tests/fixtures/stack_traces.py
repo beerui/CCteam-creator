@@ -22,3 +22,14 @@ MIN_JS_FIRST = """TypeError: ...
 EMPTY = ""
 
 GARBLED = "some random error message without proper format"
+
+WINDOWS_PATH = """TypeError: ...
+    at onResponse (C:\\Users\\jane\\app\\src\\main.js:42:15)"""
+
+URL_QUERY = """TypeError: ...
+    at onResponse (https://example.com/static/js/agent.js?v=1.2.3:631:67170)"""
+
+URL_QUERY_FIREFOX = """TypeError: ...
+onResponse@https://example.com/static/js/agent.js?t=12345:631:67170"""
+
+URL_QUERY_PLAIN = "src/pages/agent/api/conv.js?v=2:42:15"

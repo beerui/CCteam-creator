@@ -1,7 +1,8 @@
 """Tests for arms_lib.fingerprint."""
 from arms_lib.fingerprint import extract_top_frame, compute_fingerprint
 from fixtures.stack_traces import (
-    CHROME_V8, FIREFOX, PLAIN_PATH, VENDOR_FIRST, MIN_JS_FIRST, EMPTY, GARBLED
+    CHROME_V8, FIREFOX, PLAIN_PATH, VENDOR_FIRST, MIN_JS_FIRST, EMPTY, GARBLED,
+    WINDOWS_PATH, URL_QUERY, URL_QUERY_FIREFOX, URL_QUERY_PLAIN,
 )
 
 
@@ -26,6 +27,28 @@ class TestExtractTopFrame:
 
     def test_garbled_stack(self):
         assert extract_top_frame(GARBLED) == "<unparseable>"
+
+    def test_windows_path_basename(self):
+        assert extract_top_frame(WINDOWS_PATH) == "main.js:onResponse"
+
+    def test_url_query_stripped_chrome(self):
+        assert extract_top_frame(URL_QUERY) == "agent.js:onResponse"
+
+    def test_url_query_stripped_firefox(self):
+        assert extract_top_frame(URL_QUERY_FIREFOX) == "agent.js:onResponse"
+
+    def test_url_query_stripped_plain(self):
+        assert extract_top_frame(URL_QUERY_PLAIN) == "conv.js:42"
+
+
+class TestSentinelConstants:
+    def test_no_stack_constant_exported(self):
+        from arms_lib.fingerprint import NO_STACK
+        assert NO_STACK == "<no-stack>"
+
+    def test_unparseable_constant_exported(self):
+        from arms_lib.fingerprint import UNPARSEABLE
+        assert UNPARSEABLE == "<unparseable>"
 
 
 class TestComputeFingerprint:
