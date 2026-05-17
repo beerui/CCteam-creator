@@ -422,10 +422,10 @@ commit_template: arms
 
 1. **Read findings**: 读 `findings_path` 指向的 arms findings.md,**完整理解**:
    - 异常聚合表 / 根因分析 / 推荐方案 A or B / 修复点的文件:行号
-2. **建任务文件夹**: `.plans/<project>/<你的名字>/task-arms-<arms_task_id>/`
-   - `task_plan.md`: 从 arms findings 抄过来的步骤,转成 dev 视角
-   - `findings.md`: 实施过程中发现的细节
-   - `progress.md`: 实施日志
+2. **建任务文件夹（P1 起引用模式, 不复制副本）**: `.plans/<project>/<你的名字>/task-arms-<arms_task_id>/`
+   - `source.ref`: 单行内容指向 arms task folder 相对路径, e.g. `../../arms/<arms_task_id>/`(任务唯一原创起点, dev 启动时先 Read 它再去拼绝对路径读 arms task_plan.md / findings.md, 只读)
+   - `progress.md`: dev 自己的实施日志(唯一原创)
+   - ❌ **不再复制** `task_plan.md` / `findings.md` 副本 — P1 取消, 避免不同步源
 3. **切分支**: `git checkout -b <branch>`（用消息里的 branch 字段,**不要自己造名字**）
 4. **TDD 实施**: 与普通任务一致——先测后码,跑 CI 全绿
 5. **请 reviewer 内部评审**: SendMessage(reviewer),verdict 必须 [OK] 才能 commit
