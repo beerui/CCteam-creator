@@ -37,6 +37,22 @@ def aggregate_exceptions(logs: list[dict]) -> list[dict]:
     return list(buckets.values())
 
 
+def _build_query(pid: str, env: Optional[str], keywords: Optional[str]) -> str:
+    """构造 SLS query 字符串. 拒绝 keywords 中的控制字符, 转义 \\ 和 "."""
+    parts = [f"app.id:{pid}", "event_type:exception"]
+    if env:
+        parts.append(f"app.env:{env}")
+    if keywords:
+        if any(c in keywords for c in "\n\r\t\x00"):
+            raise ValueError(
+                "keywords contains control character (\\n / \\r / \\t / NUL); rejected"
+            )
+        # 反斜杠先转, 否则后续转义的 \" 会被反向消解
+        escaped = keywords.replace("\\", "\\\\").replace('"', '\\"')
+        parts.append(f'exception.message:"{escaped}"')
+    return " AND ".join(parts)
+
+
 def query_exceptions(  # pragma: no cover
     *,
     pid: str,
@@ -67,12 +83,7 @@ def query_exceptions(  # pragma: no cover
     now = int(time.time())
     from_time = now - days * 86400
 
-    query_parts = [f"app.id:{pid}", "event_type:exception"]
-    if env:
-        query_parts.append(f"app.env:{env}")
-    if keywords:
-        query_parts.append(f'exception.message:"{keywords}"')
-    query = " AND ".join(query_parts)
+    query = _build_query(pid=pid, env=env, keywords=keywords)
 
     req = GetLogsRequest(
         project=project,

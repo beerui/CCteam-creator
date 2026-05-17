@@ -1,5 +1,7 @@
 """Tests for arms_lib.sls (pure-logic only, no network)."""
-from arms_lib.sls import aggregate_exceptions
+import pytest
+
+from arms_lib.sls import _build_query, aggregate_exceptions
 from fixtures.sls_responses import SAMPLE_LOGS
 
 
@@ -27,3 +29,37 @@ def test_aggregate_keeps_first_view():
 
 def test_aggregate_empty_input():
     assert aggregate_exceptions([]) == []
+
+
+class TestBuildQuery:
+    def test_pid_only(self):
+        q = _build_query(pid="c67xxx", env=None, keywords=None)
+        assert q == "app.id:c67xxx AND event_type:exception"
+
+    def test_pid_and_env(self):
+        q = _build_query(pid="c67xxx", env="prod", keywords=None)
+        assert q == "app.id:c67xxx AND event_type:exception AND app.env:prod"
+
+    def test_with_keywords(self):
+        q = _build_query(pid="c67xxx", env="daily", keywords="conv list")
+        assert q == 'app.id:c67xxx AND event_type:exception AND app.env:daily AND exception.message:"conv list"'
+
+    def test_keywords_quote_escaped(self):
+        """keywords 含 " 必须被转义, 防止 query 提前结束"""
+        q = _build_query(pid="P", env=None, keywords='evil" AND app.env:prod')
+        # 内层的 " 应该被 \"  转义
+        assert 'exception.message:"evil\\" AND app.env:prod"' in q
+
+    def test_keywords_backslash_escaped(self):
+        """反斜杠先于引号转义 (避免 '\\"' 被反向消解)"""
+        q = _build_query(pid="P", env=None, keywords='path\\\\file')
+        # Python 字符串 path\\file → escape 后 path\\\\file
+        assert 'exception.message:"path\\\\\\\\file"' in q
+
+    def test_keywords_newline_rejected(self):
+        with pytest.raises(ValueError, match="control character"):
+            _build_query(pid="P", env=None, keywords="line1\nline2")
+
+    def test_keywords_carriage_return_rejected(self):
+        with pytest.raises(ValueError, match="control character"):
+            _build_query(pid="P", env=None, keywords="bad\rkeyword")
