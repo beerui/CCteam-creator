@@ -412,3 +412,34 @@ team-lead 用 AskUserQuestion 列出 N 个候选(N ≥ 5 时附加"加 keywords 
 
 形态 B/C 完成 fingerprint 选择后,§7(dev 完成 + reviewer)、§8(总结)、§9(用户决定不修)流程**与批量完全一致**。
 
+
+---
+
+## §11 单条深挖模式 (P1+ 0.3.0 新增)
+
+### 触发
+
+```
+/arms task=arms-20260517-001
+```
+
+从 `inbox.md` 链接深挖某条已被 SessionStart 自动采集的指纹。
+
+### 路由逻辑
+
+1. team-lead (或 light 模式直接) 读 `.plans/<project>/arms/archive.db` 的 `fingerprints` 表
+2. 找到 `task_id=<task-id>` 的行 → 若不存在报错 "未知 task_id, 检查 inbox.md"
+3. 若 `status='analyzed'` 且尚无 findings.md → SendMessage(arms, mode='deepen', task_id=...)
+4. arms agent 跳过 Step 1-3 (P1 SessionStart 已采集), 从 Step 4 (根因定位) 开始:
+   - Read 该 fingerprint 的 `stack` + `view_name` + `env` + `conv_message`
+   - Read 涉及代码文件做交叉根因分析
+   - 写 `.plans/<project>/arms/<task-id>/findings.md`
+   - 补全 `.plans/<project>/arms/<task-id>/fingerprint.md` (确保 stack_top_frame 等齐)
+   - 回报 team-lead 含推荐派单 (走 §6 派 dev)
+
+### 与 §10 (URL targeted) 的关系
+
+| 模式 | 触发 | 用途 |
+|------|------|------|
+| §10 targeted | `/arms https://arms.console...` | ARMS 后台某条 trace 直接喂入, 含原始 trace_id 信息 |
+| §11 deepen | `/arms task=arms-20260517-001` | 已被 SessionStart hook 自动采集的指纹, 触发根因分析阶段 |
