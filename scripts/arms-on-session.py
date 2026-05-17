@@ -160,7 +160,6 @@ def main() -> int:
 
         cleanup_old(conn)
         result = _run_scan(conn)
-        upsert_meta(conn, "last_global_scan", str(int(time.time())))
 
         # 写 inbox.md
         inbox_md = render_inbox(
@@ -196,6 +195,10 @@ def main() -> int:
             "深挖某条 → /arms task=<task-id>; 忽略 → 不动作",
         ])
         _emit_brief("\n".join(body_lines))
+
+        # last_global_scan 必须在 render + emit 全部成功后才写,
+        # 否则 render 异常会导致下次 24h 内静默跳过 → 用户看不到 brief
+        upsert_meta(conn, "last_global_scan", str(int(time.time())))
 
     except Exception as e:
         _emit_failure(str(e))

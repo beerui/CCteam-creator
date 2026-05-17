@@ -54,3 +54,22 @@ def test_missing_db_triggers_migrate_then_scan(tmp_path):
     code, out, err = _run(env)
     # 即使 SLS 失败, db 也应被创建
     assert (arms_dir / "archive.db").exists()
+
+
+def test_scan_failure_does_not_persist_last_global_scan(tmp_path):
+    """扫描失败 (无凭证) 时 last_global_scan 不能被写入,
+    否则下次 24h 内静默跳过, 用户彻底看不到 brief."""
+    from arms_lib.db import get_meta
+
+    arms_dir = tmp_path / "arms"
+    arms_dir.mkdir()
+
+    env = {"PATH": "/usr/bin:/bin", "ARMS_DIR": str(arms_dir)}
+    code, out, _ = _run(env)
+    assert code == 0
+    assert "巡检失败" in out or "无凭证" in out
+
+    # 关键: meta.last_global_scan 必须未写入, 让下次 session 还能重试
+    conn = sqlite3.connect(arms_dir / "archive.db")
+    assert get_meta(conn, "last_global_scan") is None
+    conn.close()
