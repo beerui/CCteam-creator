@@ -1,3 +1,55 @@
+## P1 自动巡检模式 (0.3.0+)
+
+P1 把 ARMS 流程从"用户主动 /arms"升级为"IDE 启动自动 push brief"。原 7 步流程不变, 在它**前端**加一层 SessionStart 数据采集 + 后端把 grep 换 SQLite。
+
+### 触发链
+
+```
+Claude Code 启动
+  → SessionStart hook (.claude/settings.json)
+  → scripts/arms-on-session.py (shell, 不调 LLM)
+  → 检查 archive.db.meta.last_global_scan
+      ├─ ≤24h → exit 0
+      └─ >24h → 拉 SLS (prod, 1d, line=500)
+          → 聚合 + 比对 SQLite 指纹库
+          → 新指纹 INSERT (status=analyzed, 无 findings)
+          → 复发更新 last_seen_at/count
+          → 90 天 retention 清理
+          → 写 .plans/<project>/arms/inbox.md
+          → stdout 输出 <arms-session-context>...</arms-session-context>
+  → Claude Code 把 brief 注入 model 首轮 context
+  → model 呈现给用户
+  → 用户决定: 深挖某条 → /arms task=<task-id> (走 §11)
+              忽略 → 继续工作
+```
+
+### 数据层
+
+- SQLite 库: `.plans/<project>/arms/archive.db` (T8 一次性迁移旧 `archive/index.md` 为 `index.md.legacy`)
+- 表: `fingerprints / occurrences / meta` (见 spec §3.1)
+- fingerprint 键: `SHA1(conv_message + ' @ ' + stack_top_frame)`, 替代旧的 `conv_message @ view.name`
+- 保留: 90 天 (status=resolved/ignored 才删, analyzed 永不删)
+- `occurrences.task_id` FK ON DELETE CASCADE — 删 fingerprint 自动清子表
+
+### 失败模式
+
+- SessionStart hook 失败 (无凭证 / SLS 不可达 / DB 损坏) → stdout 输出"巡检失败" brief, exit 0, **不阻塞 Claude Code 启动**
+- `last_global_scan` 只在 render + brief 全部成功后才写, 避免 render 异常导致下次 24h 内静默跳过
+
+### 与原 7 步流程的关系
+
+| 维度 | 0.2.0 (原) | 0.3.0+ (P1) |
+|------|-----------|-------------|
+| 触发 | 用户主动 `/arms` | SessionStart hook 自动 + 用户主动 `/arms task=<id>` 深挖 |
+| 历史对比 (Step 2) | grep `archive/index.md` | SQLite SELECT fingerprints WHERE conv_message=? AND stack_top_frame=? AND env=? |
+| 归档 (Step 6) | 写 fingerprint.md + 追加 `archive/index.md` 行 | 写 fingerprint.md + INSERT `archive.db.fingerprints` |
+| 数据保留 | markdown 永久 | SQLite 90 天 retention |
+| Dev task folder | 复制 task_plan/findings 副本 | `source.ref` 单行引用 arms task folder, 不复制 |
+
+P2 (后续) 会加 Step 9 (24h/7d 回访验证) + reviewer 改造 + multi-URL targeted; P3 调研 ARMS OpenAPI 反写。
+
+---
+
 ## 流程总览(可视化)
 
 ```mermaid
