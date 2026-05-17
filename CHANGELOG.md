@@ -29,6 +29,7 @@
 - `update_fingerprint_status` docstring 明确为终态转移 (resolved/ignored), 不适合增量更新 last_seen_*
 - `init_schema` 一次性设置 `conn.row_factory = sqlite3.Row` + `PRAGMA foreign_keys = ON`, 不再在 select_fingerprint_match 内部副作用
 - SessionStart hook 的 `last_global_scan` 改在 render + brief 全部成功后才写, 避免 render 异常导致下次 24h 内静默跳过
+- `arms-on-session.py` 启动时 `_load_dotenv(cwd/.env)` 自动加载 .env (零依赖, 已存在 env 不覆盖); 修复"集成项目首次开 session 必看'巡检失败'兜底"问题 — hook 是独立子进程, 不继承 shell 的 .env
 
 ### Docs
 

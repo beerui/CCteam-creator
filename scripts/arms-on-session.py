@@ -27,6 +27,31 @@ _BRIEF_OPEN = "<arms-session-context>"
 _BRIEF_CLOSE = "</arms-session-context>"
 
 
+def _load_dotenv(env_path: Path) -> None:
+    """从 .env 加载到 os.environ. 已存在的 key 不覆盖.
+
+    Why: SessionStart hook 是独立子进程, 不继承 shell 的 .env 加载,
+    导致 ARMS_PID 等凭证读不到, 集成者首次开 session 必看"巡检失败"兜底.
+    零依赖手写最小实现 (不引入 python-dotenv): 支持 KEY=VAL、KEY="VAL"、KEY='VAL'、# 注释.
+    """
+    if not env_path.exists():
+        return
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError as e:
+        print(f"arms-on-session: .env read warning: {e}", file=sys.stderr)
+
+
 def _emit_brief(body: str) -> None:
     """把 brief 字符串包装并打到 stdout (供 Claude Code SessionStart 注入)."""
     print(f"{_BRIEF_OPEN}\n{body.strip()}\n{_BRIEF_CLOSE}")
@@ -138,6 +163,8 @@ def _run_scan(conn: sqlite3.Connection) -> dict:
 
 
 def main() -> int:
+    _load_dotenv(Path.cwd() / ".env")
+
     arms_dir_str = os.environ.get("ARMS_DIR")
     if not arms_dir_str:
         # 默认: 当前 cwd 下 .plans/<project>/arms/, project 用目录名
