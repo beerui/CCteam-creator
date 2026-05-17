@@ -78,7 +78,7 @@ def test_scan_failure_does_not_persist_last_global_scan(tmp_path):
 def test_dotenv_is_loaded_from_cwd(tmp_path):
     """cwd 下存在 .env → 其中的变量进入 os.environ.
 
-    覆盖集成者最常踩的坑: 不加 load_dotenv() 时 ARMS_PID 读不到,
+    覆盖集成者最常踩的坑: 不加 load_dotenv() 时 VITE_APP_ARMS_PID 读不到,
     所有接入项目首次开 session 必看到'巡检失败'.
     """
     arms_dir = tmp_path / "arms"
@@ -86,18 +86,18 @@ def test_dotenv_is_loaded_from_cwd(tmp_path):
     # 写 .env 到 tmp_path 根 (作为子进程 cwd)
     (tmp_path / ".env").write_text(
         '# arms creds\n'
-        'ARMS_PID="from-dotenv-123"\n'
-        "ARMS_REGION=cn-hangzhou\n",
+        'VITE_APP_ARMS_PID="from-dotenv-123"\n'
+        "SLS_REGION=cn-hangzhou\n",
         encoding="utf-8",
     )
 
-    # 不在 env 里传 ARMS_PID, 只在 .env 里给; 若 _load_dotenv 生效则报错信息会变
+    # 不在 env 里传 VITE_APP_ARMS_PID, 只在 .env 里给; 若 _load_dotenv 生效则报错信息会变
     env = {"PATH": "/usr/bin:/bin", "ARMS_DIR": str(arms_dir)}
     code, out, _ = _run(env, cwd=str(tmp_path))
     assert code == 0
-    # ARMS_PID 已被 .env 提供, 失败原因不再是"缺少 ARMS_PID"
+    # VITE_APP_ARMS_PID 已被 .env 提供, 失败原因不再是"缺少 VITE_APP_ARMS_PID"
     # (会改为缺少 ARMS_AK_ID 等下游变量)
-    assert "缺少 ARMS_PID" not in out
+    assert "缺少 VITE_APP_ARMS_PID" not in out
 
 
 def test_dotenv_does_not_override_existing_env(tmp_path):
@@ -107,15 +107,93 @@ def test_dotenv_does_not_override_existing_env(tmp_path):
     """
     arms_dir = tmp_path / "arms"
     arms_dir.mkdir()
-    (tmp_path / ".env").write_text("ARMS_PID=from-dotenv\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("VITE_APP_ARMS_PID=from-dotenv\n", encoding="utf-8")
 
-    # env 里已有 ARMS_PID, .env 不应覆盖
+    # env 里已有 VITE_APP_ARMS_PID, .env 不应覆盖
     env = {
         "PATH": "/usr/bin:/bin",
         "ARMS_DIR": str(arms_dir),
-        "ARMS_PID": "from-real-env",
+        "VITE_APP_ARMS_PID": "from-real-env",
     }
     code, out, _ = _run(env, cwd=str(tmp_path))
     assert code == 0
     # 两种情况都说明 _load_dotenv 没覆盖: 不出现 "from-dotenv"
     assert "from-dotenv" not in out
+
+
+def test_brief_uses_default_env_from_config(tmp_path):
+    """config.json 含 default_env=test → 失败 brief 提示用 env=test 重试.
+
+    Why: 文档承诺 hook 读 default_env, 否则集成者想跑"测试服日常巡检"走不通.
+    用 _emit_failure 路径的"重试命令"作可观察信号 (brief 中含 env=test).
+    """
+    import json as _json
+
+    arms_dir = tmp_path / "arms"
+    arms_dir.mkdir()
+    (arms_dir / "config.json").write_text(
+        _json.dumps({"default_env": "test"}), encoding="utf-8"
+    )
+
+    # 不提供凭证 → 走 _emit_failure 路径, brief 应建议 env=test
+    env = {"PATH": "/usr/bin:/bin", "ARMS_DIR": str(arms_dir)}
+    code, out, _ = _run(env, cwd=str(tmp_path))
+    assert code == 0
+    assert "env=test" in out
+
+
+def test_brief_falls_back_to_prod_when_no_config(tmp_path):
+    """config.json 不存在 → 维持原有 prod 默认值"""
+    arms_dir = tmp_path / "arms"
+    arms_dir.mkdir()
+
+    env = {"PATH": "/usr/bin:/bin", "ARMS_DIR": str(arms_dir)}
+    code, out, _ = _run(env, cwd=str(tmp_path))
+    assert code == 0
+    assert "env=prod" in out
+
+
+def test_run_scan_sorts_new_items_by_count_desc(tmp_path, monkeypatch):
+    """_run_scan 返回的 new 列表按 count desc 排序, 让 brief 的'首条新增'选最值得 highlight 的.
+
+    Why: T16 e2e 发现 brief 把 count=2 的 getEntries 排在 count=1 的 CSS preload 后,
+    被 fingerprint 表查询顺序覆盖了优先级.
+    """
+    monkeypatch.setenv("VITE_APP_ARMS_PID", "test-pid")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("arms_on_session", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # 假数据: 3 条新指纹, count 各不同; 用 mock 替掉 query_exceptions
+    from arms_lib.db import init_schema
+    arms_dir = tmp_path / "arms"
+    arms_dir.mkdir()
+    conn = sqlite3.connect(arms_dir / "archive.db")
+    init_schema(conn)
+
+    fake_logs = []
+    for conv, frame_url, count in [
+        ("low",  "https://x/a.js", 2),
+        ("high", "https://x/b.js", 8),
+        ("mid",  "https://x/c.js", 5),
+    ]:
+        for i in range(count):
+            fake_logs.append({
+                "__time__": str(1716000000 + i),
+                "app.id": "p", "app.name": "a", "app.env": "prod",
+                "view.name": "/v", "view.name.convergence": "/v",
+                "exception.message": conv,
+                "exception.message.convergence": conv,
+                "exception.stack": f"TypeError\n    at fn ({frame_url}:1:1)",
+                "event_id": f"e{count}-{i}", "session.id": f"s{count}-{i}",
+            })
+
+    with mock.patch("arms_lib.sls.query_exceptions", return_value=fake_logs):
+        result = mod._run_scan(conn, env="prod")
+
+    counts = [item["count"] for item in result["new"]]
+    assert counts == sorted(counts, reverse=True)
+    assert result["new"][0]["conv_message"] == "high"
+    conn.close()

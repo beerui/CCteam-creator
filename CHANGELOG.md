@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 0.3.1 - 2026-05-17
+
+> Patch: T16 真 e2e 验证回炉, 修 fingerprint 归一化不足 / hook 不读 default_env / brief highlight 选条三个 bug.
+
+### Fixed / 修复
+
+- **fingerprint 归一化** (P0): `arms_lib/fingerprint.py` 新增 `normalize_for_fingerprint(text)`, 两条规则: (1) 前端构建产物 chunk hash `/name-AbCd1234.js` → `/name-{HASH}.js` (兼容 6-32 字符 base64url alphabet, 覆盖 vite/webpack contenthash); (2) ISO 时间戳毫秒尾巴 `.453Z` → `.{MS}Z`. `compute_fingerprint` 与 `aggregate_exceptions` 入口都调归一化, 与 SQLite 存储 / select_fingerprint_match 一致. **真 e2e 现场坐实**: daji 测试服 6 → 2 (5 条 ARMS 测试错误因毫秒戳拆开), 当前 prod 7 → 4 (4 条 CSS preload 因 chunk hash 拆开).
+- **SessionStart hook 读 default_env** (P1): 新增 `arms_lib/config.py:load_config(arms_dir)` 读 `.plans/<project>/arms/config.json`. hook 之前硬编码 `env="prod"`, 与 commands/arms.md 承诺的"先读 default_env, 缺失才用 prod"冲突, 导致接入项目想做"测试服日常巡检"走不通. `/arms` 用户命令仍读 CLAUDE.md (向后兼容).
+- **brief highlight 按 count desc 排序** (P3): `_run_scan` 返回 new_items 前 `sort(key=count, reverse=True)`, 让 brief 的"首条新增"自然选最值得 highlight 的指纹 (而非 SQLite 表查询顺序).
+- `_emit_failure` brief 重试命令使用动态 `default_env` (此前硬编码 `prod`, 跟 default_env 修复一并处理)
+
+### Added / 新增
+
+- `scripts/arms_lib/config.py` — per-project 配置加载 (JSON, 容错 fallback). 未来 P2 字段 (retention_days / ignore_patterns) 在此扩展, 无需新 .env 变量.
+- 22 个新单元测试: fingerprint norm 13 + sls collapse 2 + config 4 + hook default_env/sort 3. 全套从 54 → 76 全绿.
+
+### Docs
+
+- `commands/arms.md` §11 末尾加 "Hook 配置: config.json" 一节, 说明 hook 与 `/arms` 命令的配置分裂 (hook 走 config.json, 命令走 CLAUDE.md)
+
 ## 0.3.0 - 2026-05-17
 
 > Minor: P1 全面优化 ARMS 流程 — 从 "用户主动 /arms pull" 升级为 "IDE 启动自动 push brief"; markdown 指纹库迁移到 SQLite (90d retention); fingerprint 键改用 stack_top_frame (代码层不变量, 替代 view.name)。

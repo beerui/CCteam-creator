@@ -443,3 +443,15 @@ team-lead 用 AskUserQuestion 列出 N 个候选(N ≥ 5 时附加"加 keywords 
 |------|------|------|
 | §10 targeted | `/arms https://arms.console...` | ARMS 后台某条 trace 直接喂入, 含原始 trace_id 信息 |
 | §11 deepen | `/arms task=arms-20260517-001` | 已被 SessionStart hook 自动采集的指纹, 触发根因分析阶段 |
+
+### Hook 配置: `.plans/<project>/arms/config.json` (0.3.1+)
+
+SessionStart hook (`scripts/arms-on-session.py`) 不走 team-lead, 无法读 CLAUDE.md ARMS 节。它从同目录的 `config.json` 读 per-project 配置:
+
+```json
+{ "default_env": "test" }
+```
+
+- `default_env` 缺省 `prod`. 跟 `/arms env=...` 命令模式独立 (`/arms` 仍读 CLAUDE.md `default_env`)
+- 文件缺失或 JSON 错误 → fallback 到默认值, 不阻塞 hook 启动
+- 未来 P2 字段 (retention_days / ignore_patterns) 在此扩展, 无需新加 .env 变量

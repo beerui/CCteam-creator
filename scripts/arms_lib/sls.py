@@ -2,11 +2,15 @@
 import os
 from typing import Optional
 
-from arms_lib.fingerprint import extract_top_frame
+from arms_lib.fingerprint import extract_top_frame, normalize_for_fingerprint
 
 
 def aggregate_exceptions(logs: list[dict]) -> list[dict]:
     """按 (conv_message + stack_top_frame) 聚合, 返回每个指纹一条.
+
+    conv_message / stack_top_frame 在入口经 normalize_for_fingerprint 归一化,
+    使 chunk hash / 毫秒时间戳等"字面量噪音"不拆 bucket. 写入 dict 的也是
+    归一化版本, 与 SQLite 存储和 select_fingerprint_match 的匹配键一致.
 
     每条聚合结果 schema:
       conv_message, stack_top_frame, view_name, env, app, pid, count,
@@ -14,9 +18,11 @@ def aggregate_exceptions(logs: list[dict]) -> list[dict]:
     """
     buckets: dict[tuple, dict] = {}
     for log in logs:
-        conv_msg = log.get("exception.message.convergence") or log.get("exception.message", "")
+        raw_conv = log.get("exception.message.convergence") or log.get("exception.message", "")
         stack = log.get("exception.stack", "")
-        top_frame = extract_top_frame(stack)
+        raw_frame = extract_top_frame(stack)
+        conv_msg = normalize_for_fingerprint(raw_conv)
+        top_frame = normalize_for_fingerprint(raw_frame)
         key = (conv_msg, top_frame)
 
         if key not in buckets:
@@ -64,7 +70,7 @@ def query_exceptions(  # pragma: no cover
     """从 SLS 拉异常日志.
 
     依赖 .env / 环境变量:
-      ARMS_AK_ID, ARMS_AK_SECRET, ARMS_REGION, ARMS_PROJECT, ARMS_LOGSTORE
+      ARMS_AK_ID, ARMS_AK_SECRET, SLS_REGION, SLS_PROJECT, SLS_LOGSTORE
 
     返回原始 log dict 列表 (未聚合).
     """
@@ -73,9 +79,9 @@ def query_exceptions(  # pragma: no cover
 
     ak_id = os.environ["ARMS_AK_ID"]
     ak_secret = os.environ["ARMS_AK_SECRET"]
-    region = os.environ["ARMS_REGION"]
-    project = os.environ["ARMS_PROJECT"]
-    logstore = os.environ["ARMS_LOGSTORE"]
+    region = os.environ["SLS_REGION"]
+    project = os.environ["SLS_PROJECT"]
+    logstore = os.environ["SLS_LOGSTORE"]
 
     endpoint = f"{region}.log.aliyuncs.com"
     client = LogClient(endpoint, ak_id, ak_secret)

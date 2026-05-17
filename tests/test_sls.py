@@ -31,6 +31,67 @@ def test_aggregate_empty_input():
     assert aggregate_exceptions([]) == []
 
 
+def _mk_log(conv_msg: str, stack_url: str, idx: int) -> dict:
+    """Helper: 造一条 SLS log dict, 仅 conv_msg / stack 不同."""
+    return {
+        "__time__": f"171600010{idx}",
+        "app.id": "p",
+        "app.name": "app",
+        "app.env": "prod",
+        "view.name": "/v",
+        "view.name.convergence": "/v",
+        "exception.message": conv_msg,
+        "exception.message.convergence": conv_msg,
+        "exception.stack": (
+            "TypeError: x\n"
+            f"    at loadStyle ({stack_url}:1:1)"
+        ),
+        "event_id": f"e-{idx}",
+        "session.id": f"s-{idx}",
+    }
+
+
+def test_aggregate_collapses_chunk_hash_variants():
+    """5 条仅 chunk hash 不同的 log → 1 个 bucket (count=5).
+
+    复现真 e2e 现场: 当前 prod 7 条指纹里有 4 条是 CSS preload 失败,
+    因 goods-card-C9Ijfs5t / uni-icons-D_JIDRp3 等 build hash 不同被拆.
+    """
+    logs = [
+        _mk_log(
+            "css preload failed",
+            f"https://cdn.example.com/dist/goods-card-{h}.js",
+            i,
+        )
+        for i, h in enumerate(
+            ["C9Ijfs5t", "D_JIDRp3", "Ab12CdEf", "qrst5678", "uvwx9012"]
+        )
+    ]
+    aggregated = aggregate_exceptions(logs)
+    assert len(aggregated) == 1
+    assert aggregated[0]["count"] == 5
+    assert "{HASH}" in aggregated[0]["stack_top_frame"]
+
+
+def test_aggregate_collapses_iso_ms_variants():
+    """5 条仅 conv_msg 毫秒时间戳不同 → 1 个 bucket (count=5).
+
+    复现真 e2e 现场: daji 测试服 5 条 [ARMS 测试错误] 因 .453Z/.424Z/.217Z 拆开.
+    """
+    logs = [
+        _mk_log(
+            f"[ARMS 测试错误] 2026-05-17T10:30:45.{ms}Z",
+            "https://cdn.example.com/test.js",
+            i,
+        )
+        for i, ms in enumerate(["453", "424", "217", "5", "42"])
+    ]
+    aggregated = aggregate_exceptions(logs)
+    assert len(aggregated) == 1
+    assert aggregated[0]["count"] == 5
+    assert "{MS}" in aggregated[0]["conv_message"]
+
+
 class TestBuildQuery:
     def test_pid_only(self):
         q = _build_query(pid="c67xxx", env=None, keywords=None)

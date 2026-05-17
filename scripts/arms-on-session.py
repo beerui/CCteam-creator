@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from arms_lib.config import load_config
 from arms_lib.db import init_schema, get_meta, upsert_meta, select_fingerprint_match, insert_fingerprint
 from arms_lib.inbox import render_inbox
 from arms_lib.retention import cleanup_old
@@ -31,7 +32,7 @@ def _load_dotenv(env_path: Path) -> None:
     """从 .env 加载到 os.environ. 已存在的 key 不覆盖.
 
     Why: SessionStart hook 是独立子进程, 不继承 shell 的 .env 加载,
-    导致 ARMS_PID 等凭证读不到, 集成者首次开 session 必看"巡检失败"兜底.
+    导致 VITE_APP_ARMS_PID 等凭证读不到, 集成者首次开 session 必看"巡检失败"兜底.
     零依赖手写最小实现 (不引入 python-dotenv): 支持 KEY=VAL、KEY="VAL"、KEY='VAL'、# 注释.
     """
     if not env_path.exists():
@@ -57,8 +58,8 @@ def _emit_brief(body: str) -> None:
     print(f"{_BRIEF_OPEN}\n{body.strip()}\n{_BRIEF_CLOSE}")
 
 
-def _emit_failure(reason: str) -> None:
-    _emit_brief(f"ARMS 巡检失败: {reason}\n手动重试: `/arms env=prod days=1`")
+def _emit_failure(reason: str, env: str = "prod") -> None:
+    _emit_brief(f"ARMS 巡检失败: {reason}\n手动重试: `/arms env={env} days=1`")
 
 
 def _ensure_db(arms_dir: Path) -> sqlite3.Connection:
@@ -76,18 +77,19 @@ def _ensure_db(arms_dir: Path) -> sqlite3.Connection:
     return conn
 
 
-def _run_scan(conn: sqlite3.Connection) -> dict:
+def _run_scan(conn: sqlite3.Connection, env: str = "prod") -> dict:
     """跑数据采集. 返回 dict(new=[], recurring=[], in_progress=[]).
 
+    env: 从 .plans/<project>/arms/config.json default_env 读, 缺省 prod.
     失败抛异常, 由上层 catch.
     """
     from arms_lib.sls import query_exceptions, aggregate_exceptions
 
-    pid = os.environ.get("ARMS_PID")
+    pid = os.environ.get("VITE_APP_ARMS_PID")
     if not pid:
-        raise RuntimeError("缺少 ARMS_PID 环境变量 (从 .env 加载)")
+        raise RuntimeError("缺少 VITE_APP_ARMS_PID 环境变量 (从 .env 加载)")
 
-    logs = query_exceptions(pid=pid, env="prod", days=1, line=500)
+    logs = query_exceptions(pid=pid, env=env, days=1, line=500)
     aggregated = aggregate_exceptions(logs)
 
     now = int(time.time())
@@ -159,6 +161,9 @@ def _run_scan(conn: sqlite3.Connection) -> dict:
         for r in in_progress_rows
     ]
 
+    # 按 count desc 排, 让 brief 的'首条新增' highlight 最值得关注的 (而非 SQL 查询顺序)
+    new_items.sort(key=lambda x: x["count"], reverse=True)
+
     return {"new": new_items, "recurring": recurring_items, "in_progress": in_progress}
 
 
@@ -173,10 +178,13 @@ def main() -> int:
     arms_dir = Path(arms_dir_str)
     arms_dir.mkdir(parents=True, exist_ok=True)
 
+    config = load_config(arms_dir)
+    default_env = config.get("default_env") or "prod"
+
     try:
         conn = _ensure_db(arms_dir)
     except Exception as e:
-        _emit_failure(f"db 初始化失败: {e}")
+        _emit_failure(f"db 初始化失败: {e}", default_env)
         return 0
 
     try:
@@ -186,7 +194,7 @@ def main() -> int:
             return 0
 
         cleanup_old(conn)
-        result = _run_scan(conn)
+        result = _run_scan(conn, default_env)
 
         # 写 inbox.md
         inbox_md = render_inbox(
@@ -201,7 +209,7 @@ def main() -> int:
         n_prog = len(result["in_progress"])
 
         body_lines = [
-            f"ARMS 巡检: 已自动扫描 prod env 最近 24h.",
+            f"ARMS 巡检: 已自动扫描 {default_env} env 最近 24h.",
             "",
             f"- 🆕 新增指纹 {n_new} 条",
             f"- 🔁 复发指纹 {n_rec} 条" + (
@@ -228,7 +236,7 @@ def main() -> int:
         upsert_meta(conn, "last_global_scan", str(int(time.time())))
 
     except Exception as e:
-        _emit_failure(str(e))
+        _emit_failure(str(e), default_env)
         print(f"arms-on-session error: {e}", file=sys.stderr)
     finally:
         conn.close()
